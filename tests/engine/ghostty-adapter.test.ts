@@ -25,6 +25,7 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.js', () =>
   newTab: vi.fn().mockResolvedValue(''),
   splitPane: vi.fn().mockResolvedValue(''),
   inputText: vi.fn().mockResolvedValue(''),
+  sendKey: vi.fn().mockResolvedValue(''),
   selectTab: vi.fn().mockResolvedValue(''),
   getTabTitles: vi.fn().mockResolvedValue([]),
   getTerminalIds: vi.fn().mockResolvedValue([]),
@@ -419,18 +420,20 @@ describe('GhosttyAdapter: sendText', () => {
 // sendCommand
 // ---------------------------------------------------------------------------
 describe('GhosttyAdapter: sendCommand', () => {
-  it('should append newline to command', async () => {
+  it('should input text then send enter key', async () => {
     const adapter = createAdapter()
     await adapter.sendCommand('npm run dev')
 
-    expect(ghosttyScript.inputText).toHaveBeenCalledWith('npm run dev\n')
+    expect(ghosttyScript.inputText).toHaveBeenCalledWith('npm run dev')
+    expect(ghosttyScript.sendKey).toHaveBeenCalledWith('enter')
   })
 
-  it('should send empty command with newline', async () => {
+  it('should send enter key even for empty command', async () => {
     const adapter = createAdapter()
     await adapter.sendCommand('')
 
-    expect(ghosttyScript.inputText).toHaveBeenCalledWith('\n')
+    expect(ghosttyScript.inputText).toHaveBeenCalledWith('')
+    expect(ghosttyScript.sendKey).toHaveBeenCalledWith('enter')
   })
 })
 

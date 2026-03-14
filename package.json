@@ -10,7 +10,8 @@
     "build": "npm run build --workspaces",
     "test": "npx vitest run tests/ --reporter=verbose",
     "test:coverage": "npx vitest run --coverage tests/",
-    "typecheck": "tsc --build --noEmit"
+    "typecheck": "tsc --build --noEmit",
+    "pack": "cd packages/extension && npm run build && npm run package"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -102,12 +102,30 @@ export async function splitPane(
  * Send text input to the focused terminal in the front window.
  *
  * Ghostty supports `input text` as a direct command with optional `to` parameter.
- * Newlines are passed through as literal characters.
+ * NOTE: `input text` injects text via the paste path (`printString`), not the
+ * keyboard input path. Newlines (`\n`) only move the cursor — they do NOT send
+ * a carriage return (`\r`) to the shell. Use `sendKey("enter")` to execute.
  */
 export async function inputText(text: string): Promise<string> {
   // Escape double quotes and backslashes for AppleScript string literal
   const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   return runAppleScript(`tell application "Ghostty" to input text "${escaped}" to focused terminal of selected tab of front window`)
+}
+
+/**
+ * Send a keyboard key event to the focused terminal in the front window.
+ *
+ * Unlike `input text` (which goes through the paste/print path), `send key`
+ * simulates actual keyboard events through `key_encode.zig`, which writes
+ * proper control characters to the PTY (e.g. `\r` for Enter).
+ *
+ * Common key names: "enter", "space", "tab", "backspace",
+ * "arrowUp", "arrowDown", "arrowLeft", "arrowRight", "a"-"z", "f1"-"f20"
+ */
+export async function sendKey(keyName: string): Promise<string> {
+  return runAppleScript(
+    `tell application "Ghostty" to send key "${keyName}" to focused terminal of selected tab of front window`
+  )
 }
 
 /**

@@ -180,7 +180,8 @@ export class GhosttyAdapter implements TerminalAdapter {
   }
 
   async sendCommand(command: string): Promise<void> {
-    await ghosttyScript.inputText(`${command}\n`)
+    await ghosttyScript.inputText(command)
+    await ghosttyScript.sendKey('enter')
   }
 
   /**
