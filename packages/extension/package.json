@@ -1,0 +1,54 @@
+{
+  "name": "ide-tui-bridge",
+  "version": "0.1.0",
+  "description": "IDE-TUI Bridge Extension for Cursor/VS Code",
+  "displayName": "IDE-TUI Bridge",
+  "publisher": "ide-tui-bridge",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "activationEvents": [
+    "onCommand:ideTuiBridge.openProject"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ideTuiBridge.openProject",
+        "title": "Workspace Sync: Open Project"
+      }
+    ],
+    "configuration": {
+      "title": "IDE-TUI Bridge",
+      "properties": {
+        "ideTuiBridge.ghosttyPath": {
+          "type": "string",
+          "default": "/Applications/Ghostty.app",
+          "description": "Path to Ghostty.app"
+        },
+        "ideTuiBridge.configFileName": {
+          "type": "string",
+          "default": ".contextsync.yml",
+          "description": "Configuration file name"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'Tests are in the root tests/ directory'"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@ide-tui-bridge/engine": "*"
+  }
+}
