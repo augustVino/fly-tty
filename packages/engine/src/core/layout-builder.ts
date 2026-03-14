@@ -16,6 +16,7 @@ import { isLayoutContainer, isPaneLeaf } from '../types/layout.js'
 /** A single split-pane action for the terminal adapter */
 export interface SplitAction {
   readonly direction: 'right' | 'down'
+  readonly workingDirectory?: string
 }
 
 /**
@@ -43,6 +44,9 @@ function mapDirection(direction: SplitDirection): 'right' | 'down' {
  * 3. For each subsequent child, emit a split action using the container's
  *    direction, then recurse into that child.
  * 4. Leaf nodes produce no actions.
+ * 5. Each split action carries the `workingDirectory` of the first leaf
+ *    in the child subtree it creates, so the adapter can open the pane
+ *    directly in the correct directory.
  *
  * Examples:
  *   Single pane                -> []
@@ -54,19 +58,23 @@ function mapDirection(direction: SplitDirection): 'right' | 'down' {
 export function buildSplitSequence(node: LayoutNode): readonly SplitAction[] {
   const actions: SplitAction[] = []
 
-  function traverse(current: LayoutNode): void {
+  /**
+   * Traverse the subtree and return its first leaf node (for cwd resolution).
+   * Returns undefined if the subtree has no leaves.
+   */
+  function traverse(current: LayoutNode): PaneLeaf | undefined {
     if (isPaneLeaf(current)) {
-      return
+      return current
     }
 
     if (!isLayoutContainer(current)) {
-      return
+      return undefined
     }
 
     const children = current.panes
 
     if (children.length === 0) {
-      return
+      return undefined
     }
 
     // First child reuses the current pane -- recurse without splitting
@@ -74,13 +82,32 @@ export function buildSplitSequence(node: LayoutNode): readonly SplitAction[] {
 
     // Remaining children each require a split in the container's direction
     for (let i = 1; i < children.length; i++) {
-      actions.push({ direction: mapDirection(current.direction) })
+      const firstLeaf = firstLeafOf(children[i])
+      actions.push({
+        direction: mapDirection(current.direction),
+        workingDirectory: firstLeaf?.cwd,
+      })
       traverse(children[i])
     }
+
+    return undefined
   }
 
   traverse(node)
   return Object.freeze(actions)
+}
+
+/**
+ * Get the first leaf node of a subtree without emitting split actions.
+ */
+function firstLeafOf(node: LayoutNode): PaneLeaf | undefined {
+  if (isPaneLeaf(node)) {
+    return node
+  }
+  if (!isLayoutContainer(node)) {
+    return undefined
+  }
+  return firstLeafOf(node.panes[0])
 }
 
 /**

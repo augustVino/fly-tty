@@ -166,8 +166,11 @@ describe('core/sync-engine: sync (new tab flow)', () => {
     expect(mockAdapterMethods.activateWindow).toHaveBeenCalledOnce()
     expect(mockAdapterMethods.findTabByProject).toHaveBeenCalledWith('/tmp/test-project')
     expect(mockAdapterMethods.createTab).toHaveBeenCalledOnce()
-    expect(mockAdapterMethods.splitPane).toHaveBeenCalledWith('right')
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalled()
+    expect(mockAdapterMethods.splitPane).toHaveBeenCalledWith('right', {
+      workingDirectory: '/tmp/test-project',
+    })
+    // sendCommand only called for panes with a non-empty command
+    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith('vim')
   })
 })
 
@@ -218,7 +221,8 @@ describe('core/sync-engine: sync (config load failure)', () => {
 
     expect(mockAdapterMethods.ensureRunning).toHaveBeenCalled()
     expect(mockAdapterMethods.activateWindow).toHaveBeenCalled()
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalled()
+    // Default config has a single pane with empty command, so sendCommand is not called
+    expect(mockAdapterMethods.sendCommand).not.toHaveBeenCalled()
   })
 })
 
@@ -275,7 +279,11 @@ describe('core/sync-engine: sync (three-pane layout)', () => {
     }
 
     expect(mockAdapterMethods.splitPane).toHaveBeenCalledTimes(2)
-    expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(1, 'down')
-    expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(2, 'right')
+    expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(1, 'down', {
+      workingDirectory: '/tmp/test-project',
+    })
+    expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(2, 'right', {
+      workingDirectory: '/tmp/test-project',
+    })
   })
 })

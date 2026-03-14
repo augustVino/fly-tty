@@ -80,7 +80,9 @@ export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
       splitCount = splitActions.length
 
       for (const action of splitActions) {
-        await adapter.splitPane(action.direction)
+        await adapter.splitPane(action.direction, {
+          workingDirectory: action.workingDirectory ?? options.projectPath,
+        })
       }
     }
 

@@ -2,12 +2,18 @@
  * Ghostty terminal adapter implementation.
  *
  * Uses AppleScript to control Ghostty on macOS.
+ * Pane identification strategy: tracks terminal UUIDs for reliable navigation.
  * Tab identification strategy: titles formatted as `[WorkspaceSync] <project-dirname>`.
  */
 
 import { execa } from 'execa'
 import * as ghosttyScript from './ghostty-applescript.js'
-import type { TerminalAdapter, TerminalTab } from '../../types/adapter.js'
+import type {
+  TerminalAdapter,
+  TerminalTab,
+  CreateTabOptions,
+  SplitPaneOptions,
+} from '../../types/adapter.js'
 
 /** Prefix used to identify workspace-synced tabs */
 const TAB_PREFIX = '[WorkspaceSync]'
@@ -15,6 +21,9 @@ const TAB_PREFIX = '[WorkspaceSync]'
 /** Default retry interval and max attempts for waiting on Ghostty */
 const WAIT_INTERVAL_MS = 500
 const MAX_WAIT_ATTEMPTS = 20
+
+/** Delay after operations that need time to settle (e.g. tab creation, split) */
+const SETTLE_DELAY_MS = 300
 
 /**
  * Extract the directory name from an absolute file path.
@@ -73,8 +82,15 @@ async function waitForWindow(): Promise<void> {
  * Ghostty terminal adapter.
  *
  * Implements TerminalAdapter using AppleScript commands on macOS.
+ * Tracks terminal UUIDs internally for reliable pane navigation.
  */
 export class GhosttyAdapter implements TerminalAdapter {
+  /**
+   * Cached terminal UUIDs in the current tab, in DFS creation order.
+   * Refreshed after createTab/splitPane operations.
+   */
+  private cachedPaneIds: readonly string[] = []
+
   get name(): string {
     return 'ghostty'
   }
@@ -106,32 +122,31 @@ export class GhosttyAdapter implements TerminalAdapter {
     return tabs.find((tab) => tab.title === expectedTitle) ?? null
   }
 
-  async createTab(title?: string): Promise<TerminalTab> {
-    await ghosttyScript.newTab()
+  async createTab(options?: CreateTabOptions): Promise<TerminalTab> {
+    const { title, workingDirectory } = options ?? {}
+    await ghosttyScript.newTab(workingDirectory)
 
-    // Brief delay to let the new tab register
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    // Wait for the new tab to register and stabilize
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
+
+    // Refresh cached pane IDs (new tab starts with a single terminal)
+    this.cachedPaneIds = await ghosttyScript.getTerminalIds()
 
     const tabs = await this.listTabs()
-    // The new tab is the last one
-    const newTab = tabs[tabs.length - 1]
+    const lastTab = tabs[tabs.length - 1]
 
-    if (!newTab) {
+    if (!lastTab) {
       throw new Error('Failed to create tab: no tabs found after creation')
     }
 
-    // If a title was provided and the tab doesn't have the desired title yet,
-    // we derive the effective title. Note: Ghostty does not have a direct
-    // "set tab title" AppleScript command, so the title parameter informs
-    // the tab identifier but is set by shell prompt integration.
     if (title) {
       return {
-        ...newTab,
+        ...lastTab,
         title,
       }
     }
 
-    return { ...newTab }
+    return { ...lastTab }
   }
 
   async focusTab(tab: TerminalTab): Promise<void> {
@@ -140,10 +155,24 @@ export class GhosttyAdapter implements TerminalAdapter {
       throw new Error(`Invalid tab id: "${tab.id}"`)
     }
     await ghosttyScript.selectTab(tabIndex)
+
+    // Refresh cached pane IDs after switching tabs
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
+    this.cachedPaneIds = await ghosttyScript.getTerminalIds()
   }
 
-  async splitPane(direction: 'right' | 'down'): Promise<void> {
-    await ghosttyScript.splitPane(direction)
+  async splitPane(
+    direction: 'right' | 'down',
+    options?: SplitPaneOptions,
+  ): Promise<void> {
+    const { workingDirectory } = options ?? {}
+    await ghosttyScript.splitPane(direction, workingDirectory)
+
+    // Wait for the split to complete and the new terminal to register
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
+
+    // Refresh cached pane IDs after split
+    this.cachedPaneIds = await ghosttyScript.getTerminalIds()
   }
 
   async sendText(text: string): Promise<void> {
@@ -154,11 +183,31 @@ export class GhosttyAdapter implements TerminalAdapter {
     await ghosttyScript.inputText(`${command}\n`)
   }
 
+  /**
+   * Navigate to a specific pane by 1-based index.
+   *
+   * Uses terminal UUIDs for reliable navigation:
+   * 1. Refresh the cached terminal IDs if needed
+   * 2. Focus the terminal at position (index - 1) by its UUID
+   */
   async navigateToPane(index: number): Promise<void> {
     if (index < 1) {
       throw new Error(`Pane index must be a positive integer, got: ${index}`)
     }
-    await ghosttyScript.navigateToPane(index)
+
+    // Refresh pane IDs if cache is empty or stale
+    if (this.cachedPaneIds.length === 0) {
+      this.cachedPaneIds = await ghosttyScript.getTerminalIds()
+    }
+
+    const paneId = this.cachedPaneIds[index - 1]
+    if (!paneId) {
+      throw new Error(
+        `Pane index ${index} out of range (only ${this.cachedPaneIds.length} panes exist)`
+      )
+    }
+
+    await ghosttyScript.focusTerminalById(paneId)
   }
 }
 

@@ -4,9 +4,10 @@
  * Covers:
  * - ensureRunning: Ghostty not running -> starts it; already running -> no-op
  * - findTabByProject: matches [WorkspaceSync] prefix; no match -> null
- * - splitPane: correct AppleScript call
+ * - splitPane: correct AppleScript call via perform action
+ * - navigateToPane: uses terminal UUID focus
  * - sendCommand: adds newline
- * - Other adapter methods: activateWindow, navigateToPane, etc.
+ * - Other adapter methods: activateWindow, etc.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -26,7 +27,10 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.js', () =>
   inputText: vi.fn().mockResolvedValue(''),
   selectTab: vi.fn().mockResolvedValue(''),
   getTabTitles: vi.fn().mockResolvedValue([]),
-  navigateToPane: vi.fn().mockResolvedValue(''),
+  getTerminalIds: vi.fn().mockResolvedValue([]),
+  focusTerminalById: vi.fn().mockResolvedValue(''),
+  gotoNextSplit: vi.fn().mockResolvedValue(''),
+  gotoPreviousSplit: vi.fn().mockResolvedValue(''),
 }))
 
 import { execa } from 'execa'
@@ -256,6 +260,10 @@ describe('GhosttyAdapter: findTabByProject', () => {
 describe('GhosttyAdapter: createTab', () => {
   it('should create a new tab and return the last one', async () => {
     vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+    ])
     vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
       'First tab',
       'New tab',
@@ -266,17 +274,21 @@ describe('GhosttyAdapter: createTab', () => {
 
     expect(tab).toEqual({ id: '2', title: 'New tab', windowId: 'front' })
     expect(ghosttyScript.newTab).toHaveBeenCalledOnce()
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledOnce()
   })
 
   it('should create tab with custom title', async () => {
     vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
     vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
       'First tab',
       'New tab',
     ])
 
     const adapter = createAdapter()
-    const tab = await adapter.createTab('[WorkspaceSync] my-project')
+    const tab = await adapter.createTab({
+      title: '[WorkspaceSync] my-project',
+    })
 
     expect(tab).toEqual({
       id: '2',
@@ -285,8 +297,26 @@ describe('GhosttyAdapter: createTab', () => {
     })
   })
 
+  it('should create tab with working directory', async () => {
+    vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
+    vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+      'First tab',
+      'New tab',
+    ])
+
+    const adapter = createAdapter()
+    await adapter.createTab({
+      title: '[WorkspaceSync] test-project',
+      workingDirectory: '/Users/dev/test-project',
+    })
+
+    expect(ghosttyScript.newTab).toHaveBeenCalledWith('/Users/dev/test-project')
+  })
+
   it('should throw error when no tabs after creation', async () => {
     vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
     vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([])
 
     const adapter = createAdapter()
@@ -298,11 +328,17 @@ describe('GhosttyAdapter: createTab', () => {
 // focusTab
 // ---------------------------------------------------------------------------
 describe('GhosttyAdapter: focusTab', () => {
-  it('should select tab by numeric index', async () => {
+  it('should select tab by numeric index and refresh pane IDs', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+    ])
+
     const adapter = createAdapter()
     await adapter.focusTab({ id: '2', title: 'Test' })
 
     expect(ghosttyScript.selectTab).toHaveBeenCalledWith(2)
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledOnce()
   })
 
   it('should throw error for non-numeric tab id', async () => {
@@ -324,18 +360,46 @@ describe('GhosttyAdapter: focusTab', () => {
 // splitPane
 // ---------------------------------------------------------------------------
 describe('GhosttyAdapter: splitPane', () => {
-  it('should call ghosttyScript.splitPane with "right"', async () => {
+  it('should call ghosttyScript.splitPane with "right" and refresh pane IDs', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+    ])
+
     const adapter = createAdapter()
     await adapter.splitPane('right')
 
-    expect(ghosttyScript.splitPane).toHaveBeenCalledWith('right')
+    expect(ghosttyScript.splitPane).toHaveBeenCalledWith('right', undefined)
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledTimes(1)
   })
 
-  it('should call ghosttyScript.splitPane with "down"', async () => {
+  it('should call ghosttyScript.splitPane with "down" and refresh pane IDs', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+    ])
+
     const adapter = createAdapter()
     await adapter.splitPane('down')
 
-    expect(ghosttyScript.splitPane).toHaveBeenCalledWith('down')
+    expect(ghosttyScript.splitPane).toHaveBeenCalledWith('down', undefined)
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledTimes(1)
+  })
+
+  it('should pass workingDirectory to splitPane', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+    ])
+
+    const adapter = createAdapter()
+    await adapter.splitPane('right', { workingDirectory: '/Users/dev/subdir' })
+
+    expect(ghosttyScript.splitPane).toHaveBeenCalledWith(
+      'right',
+      '/Users/dev/subdir',
+    )
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -371,14 +435,50 @@ describe('GhosttyAdapter: sendCommand', () => {
 })
 
 // ---------------------------------------------------------------------------
-// navigateToPane
+// navigateToPane (uses terminal UUID focus)
 // ---------------------------------------------------------------------------
 describe('GhosttyAdapter: navigateToPane', () => {
-  it('should navigate to pane by index', async () => {
+  it('should focus terminal by cached UUID at index 1', async () => {
     const adapter = createAdapter()
+
+    // Simulate cached pane IDs (e.g. after createTab + splitPane)
+    const adapterWithCache = adapter as GhosttyAdapter
+    ;(adapterWithCache as unknown as { cachedPaneIds: readonly string[] }).cachedPaneIds = [
+      'uuid-first',
+      'uuid-second',
+    ]
+
     await adapter.navigateToPane(1)
 
-    expect(ghosttyScript.navigateToPane).toHaveBeenCalledWith(1)
+    expect(ghosttyScript.focusTerminalById).toHaveBeenCalledWith('uuid-first')
+  })
+
+  it('should focus terminal by cached UUID at index 2', async () => {
+    const adapter = createAdapter()
+    ;(adapter as unknown as { cachedPaneIds: readonly string[] }).cachedPaneIds = [
+      'uuid-first',
+      'uuid-second',
+    ]
+
+    await adapter.navigateToPane(2)
+
+    expect(ghosttyScript.focusTerminalById).toHaveBeenCalledWith('uuid-second')
+  })
+
+  it('should refresh cached pane IDs when cache is empty', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce([
+      'uuid-1',
+      'uuid-2',
+      'uuid-3',
+    ])
+
+    // A fresh adapter has empty cache
+    const adapter = createAdapter()
+
+    await adapter.navigateToPane(2)
+
+    expect(ghosttyScript.getTerminalIds).toHaveBeenCalledOnce()
+    expect(ghosttyScript.focusTerminalById).toHaveBeenCalledWith('uuid-2')
   })
 
   it('should throw error for zero index', async () => {
@@ -392,6 +492,19 @@ describe('GhosttyAdapter: navigateToPane', () => {
     const adapter = createAdapter()
     await expect(adapter.navigateToPane(-1)).rejects.toThrow(
       'Pane index must be a positive integer',
+    )
+  })
+
+  it('should throw error when index exceeds available panes', async () => {
+    vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
+
+    const adapter = createAdapter()
+    ;(adapter as unknown as { cachedPaneIds: readonly string[] }).cachedPaneIds = [
+      'uuid-1',
+    ]
+
+    await expect(adapter.navigateToPane(5)).rejects.toThrow(
+      'Pane index 5 out of range',
     )
   })
 })

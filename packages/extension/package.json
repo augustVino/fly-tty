@@ -11,13 +11,30 @@
     "onCommand:ideTuiBridge.openProject"
   ],
   "main": "./dist/extension.js",
+  "files": [
+    "dist/**",
+    "media/**"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "ideTuiBridge.openProject",
-        "title": "Workspace Sync: Open Project"
+        "title": "Workspace Sync: Open Project",
+        "icon": {
+          "light": "media/icon-light.svg",
+          "dark": "media/icon-dark.svg"
+        }
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "ideTuiBridge.openProject",
+          "group": "navigation",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
     "configuration": {
       "title": "IDE-TUI Bridge",
       "properties": {
@@ -37,7 +54,7 @@
   "scripts": {
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "package": "vsce package",
+    "package": "vsce package --allow-missing-repository --no-dependencies --skip-license",
     "typecheck": "tsc --noEmit",
     "test": "echo 'Tests are in the root tests/ directory'"
   },
@@ -47,8 +64,5 @@
     "@vscode/vsce": "^3.2.1",
     "esbuild": "^0.24.2",
     "typescript": "^5.7.2"
-  },
-  "dependencies": {
-    "@ide-tui-bridge/engine": "*"
   }
 }

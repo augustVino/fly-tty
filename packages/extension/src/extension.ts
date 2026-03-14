@@ -1,8 +1,8 @@
 /**
  * IDE-TUI Bridge VS Code / Cursor Extension
  *
- * Entry point for the extension. Registers the `ideTuiBridge.openProject` command
- * and manages the lifecycle of extension resources (OutputChannel, command disposables).
+ * Entry point for the extension. Registers the `ideTuiBridge.openProject` command,
+ * creates a status bar button and OutputChannel, and manages lifecycle resources.
  */
 
 import * as vscode from 'vscode'
@@ -17,12 +17,14 @@ const COMMAND_ID = 'ideTuiBridge.openProject'
  * Extension activation lifecycle.
  *
  * Called when the extension is first activated (e.g., command invoked).
- * Registers the openProject command and creates the OutputChannel.
+ * Registers the openProject command, creates a status bar button,
+ * and creates the OutputChannel.
  */
 export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = createOutputChannel()
   context.subscriptions.push(outputChannel)
 
+  // Register command
   const commandDisposable = vscode.commands.registerCommand(
     COMMAND_ID,
     async () => {
@@ -30,7 +32,17 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   )
 
-  context.subscriptions.push(commandDisposable)
+  // Create status bar button (right side of status bar)
+  const statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100,
+  )
+  statusBarItem.command = COMMAND_ID
+  statusBarItem.text = '$(terminal) Sync'
+  statusBarItem.tooltip = 'IDE-TUI Bridge: Open project in terminal'
+  statusBarItem.show()
+
+  context.subscriptions.push(commandDisposable, statusBarItem)
 }
 
 /**
@@ -40,6 +52,6 @@ export function activate(context: vscode.ExtensionContext): void {
  * context.subscriptions are automatically disposed by VS Code.
  */
 export function deactivate(): void {
-  // Disposal of OutputChannel and command registrations is handled
-  // automatically via context.subscriptions.
+  // Disposal of OutputChannel, command registrations, and status bar
+  // is handled automatically via context.subscriptions.
 }

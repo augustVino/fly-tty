@@ -9,6 +9,13 @@
 
 import type { TerminalAdapter, TerminalTab } from '../types/adapter.js'
 
+const TAB_PREFIX = '[WorkspaceSync]'
+
+function buildTabTitle(projectPath: string): string {
+  const dirName = projectPath.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
+  return `${TAB_PREFIX} ${dirName}`
+}
+
 export interface TabResolution {
   readonly tab: TerminalTab
   readonly isNew: boolean
@@ -32,6 +39,9 @@ export async function resolveTab(
     return Object.freeze({ tab: existingTab, isNew: false })
   }
 
-  const newTab = await adapter.createTab(projectPath)
+  const newTab = await adapter.createTab({
+    title: buildTabTitle(projectPath),
+    workingDirectory: projectPath,
+  })
   return Object.freeze({ tab: newTab, isNew: true })
 }
