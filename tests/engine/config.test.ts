@@ -4,35 +4,12 @@
  * Covers:
  * - Zod schema validation (valid & invalid configs)
  * - Default values
- * - Config loader (file not found, normal load, parse errors)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { writeFile, unlink, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { describe, it, expect } from 'vitest'
 import { ProjectConfigSchema } from '@ide-tui-bridge/engine/config/schema.js'
 import { defaultConfig } from '@ide-tui-bridge/engine/config/defaults.js'
-import { loadConfig } from '@ide-tui-bridge/engine/config/loader.js'
 import type { ProjectConfig } from '@ide-tui-bridge/engine/types/config.js'
-
-const testDir = '/tmp/ide-tui-bridge-test'
-const configPath = join(testDir, '.contextsync.yml')
-
-beforeEach(async () => {
-  try {
-    await mkdir(testDir, { recursive: true })
-  } catch {
-    // Already exists
-  }
-})
-
-afterEach(async () => {
-  try {
-    await unlink(configPath)
-  } catch {
-    // Ignore
-  }
-})
 
 // ---------------------------------------------------------------------------
 // Schema validation tests
@@ -46,12 +23,12 @@ describe('config/schema', () => {
         layout: {
           direction: 'horizontal',
           panes: [
-            { id: 'top', command: 'command' },
+            { id: 'top', commands: ['command'] },
             {
               direction: 'vertical',
               panes: [
-                { id: 'bottom-left', command: 'npm run dev' },
-                { id: 'bottom-right', command: '' },
+                { id: 'bottom-left', commands: ['npm run dev'] },
+                { id: 'bottom-right', commands: [] },
               ],
             },
           ],
@@ -72,8 +49,8 @@ describe('config/schema', () => {
         layout: {
           direction: 'horizontal',
           panes: [
-            { id: 'top', command: 'command' },
-            { id: 'bottom', command: 'npm run dev' },
+            { id: 'top', commands: ['command'] },
+            { id: 'bottom', commands: ['npm run dev'] },
           ],
         },
       }
@@ -90,8 +67,8 @@ describe('config/schema', () => {
         layout: {
           direction: 'vertical',
           panes: [
-            { id: 'left', command: 'npm run dev' },
-            { id: 'right', command: '' },
+            { id: 'left', commands: ['npm run dev'] },
+            { id: 'right', commands: [] },
           ],
         },
       }
@@ -104,7 +81,7 @@ describe('config/schema', () => {
       const input = {
         layout: {
           direction: 'none',
-          panes: [{ id: 'main', command: 'npm run dev' }],
+          panes: [{ id: 'main', commands: ['npm run dev'] }],
         },
       }
 
@@ -116,7 +93,7 @@ describe('config/schema', () => {
       const input = {
         layout: {
           id: 'main',
-          command: 'npm run dev',
+          commands: ['npm run dev'],
         },
       }
 
@@ -133,11 +110,10 @@ describe('config/schema', () => {
       }
 
       const result = ProjectConfigSchema.parse(input)
-      const layout = result.layout as unknown as { panes: Array<{ auto_focus?: boolean; command?: string }> }
       if ('panes' in result.layout) {
-        const pane = layout.panes[0]
+        const pane = result.layout.panes[0] as { auto_focus?: boolean; commands?: string[] }
         expect(pane.auto_focus).toBe(false)
-        expect(pane.command).toBe('')
+        expect(pane.commands).toEqual([])
       }
     })
 
@@ -146,7 +122,7 @@ describe('config/schema', () => {
         layout: {
           direction: 'vertical',
           panes: [
-            { id: 'a', auto_focus: true, command: 'vim', cwd: '/tmp' },
+            { id: 'a', auto_focus: true, commands: ['vim'], cwd: '/tmp' },
             { id: 'b' },
           ],
         },
@@ -154,6 +130,25 @@ describe('config/schema', () => {
 
       const result = ProjectConfigSchema.parse(input)
       expect(result).toBeDefined()
+    })
+
+    it('should accept multiple commands in a pane', () => {
+      const input = {
+        layout: {
+          direction: 'none',
+          panes: [{
+            id: 'dev',
+            commands: ['cd /some/path', 'npm install', 'npm run dev'],
+          }],
+        },
+      }
+
+      const result = ProjectConfigSchema.parse(input)
+      expect(result).toBeDefined()
+      if ('panes' in result.layout) {
+        const pane = result.layout.panes[0] as { commands?: string[] }
+        expect(pane.commands).toHaveLength(3)
+      }
     })
   })
 
@@ -258,14 +253,14 @@ describe('config/schema', () => {
       expect(result.layout.auto_focus).toBe(false)
     })
 
-    it('should default command to empty string', () => {
+    it('should default commands to empty array', () => {
       const input = {
         layout: {
           id: 'main',
         },
       }
-      const result = ProjectConfigSchema.parse(input) as unknown as { layout: { command?: string } }
-      expect(result.layout.command).toBe('')
+      const result = ProjectConfigSchema.parse(input) as unknown as { layout: { commands?: string[] } }
+      expect(result.layout.commands).toEqual([])
     })
   })
 })
@@ -285,88 +280,5 @@ describe('config/defaults', () => {
     const layout = defaultConfig.layout as unknown as { direction?: string; panes?: unknown[] }
     expect(layout.direction).toBe('none')
     expect(layout.panes).toHaveLength(1)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Loader tests
-// ---------------------------------------------------------------------------
-describe('config/loader', () => {
-  it('should return default config when file does not exist', async () => {
-    const result = await loadConfig(testDir)
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value.version).toBe(defaultConfig.version)
-      expect(result.value.terminal).toBe(defaultConfig.terminal)
-    }
-  })
-
-  it('should load and parse a valid config file', async () => {
-    // Note: version must be quoted in YAML to be parsed as string, not number
-    const configContent = `version: "1.0"
-terminal: ghostty
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top
-      command: 'command'
-    - id: pane_bottom
-      command: 'npm run dev'`
-
-    await writeFile(configPath, configContent, 'utf-8')
-
-    const result = await loadConfig(testDir)
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value.version).toBe('1.0')
-      expect(result.value.terminal).toBe('ghostty')
-    }
-  })
-
-  it('should support custom config file name', async () => {
-    const customConfigPath = join(testDir, '.custom.yml')
-    const configContent = `version: "1.0"
-terminal: ghostty
-layout:
-  direction: none
-  panes:
-    - id: main
-      command: 'npm run dev'`
-
-    await writeFile(customConfigPath, configContent, 'utf-8')
-
-    const result = await loadConfig(testDir, { configFileName: '.custom.yml' })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value.terminal).toBe('ghostty')
-    }
-
-    await unlink(customConfigPath)
-  })
-
-  it('should throw error for invalid YAML', async () => {
-    const invalidYaml = `version: 1.0
-terminal: ghostty
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top
-      command: 'command'
-    invalid: [unclosed`
-
-    await writeFile(configPath, invalidYaml, 'utf-8')
-    await expect(loadConfig(testDir)).rejects.toThrow('Failed to parse YAML')
-  })
-
-  it('should throw error for invalid schema', async () => {
-    const invalidSchema = `version: 1.0
-terminal: ghostty
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top`
-
-    await writeFile(configPath, invalidSchema, 'utf-8')
-    await expect(loadConfig(testDir)).rejects.toThrow('Invalid configuration')
   })
 })

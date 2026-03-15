@@ -11,7 +11,7 @@ const defaultLayout: LayoutNode = {
   panes: [
     {
       id: 'main',
-      command: '',
+      commands: [],
     },
   ],
 }

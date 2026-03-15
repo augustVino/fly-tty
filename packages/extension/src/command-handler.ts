@@ -10,7 +10,7 @@
 
 import * as vscode from 'vscode'
 import { sync } from '@ide-tui-bridge/engine'
-import type { SyncOptions, SyncResult } from '@ide-tui-bridge/engine'
+import type { SyncOptions, SyncResult, LayoutNode } from '@ide-tui-bridge/engine'
 
 const OUTPUT_CHANNEL_NAME = 'IDE-TUI Bridge'
 
@@ -40,14 +40,14 @@ export function getWorkspaceRootPath(): string | null {
  */
 export function getExtensionConfig(): {
   readonly ghosttyPath: string
-  readonly configFileName: string
+  readonly layout?: LayoutNode
 } {
   const configuration = vscode.workspace.getConfiguration('ideTuiBridge')
 
   const ghosttyPath = configuration.get<string>('ghosttyPath', '/Applications/Ghostty.app')
-  const configFileName = configuration.get<string>('configFileName', '.contextsync.yml')
+  const layout = configuration.get<LayoutNode>('layout')
 
-  return Object.freeze({ ghosttyPath, configFileName })
+  return Object.freeze({ ghosttyPath, layout })
 }
 
 /**
@@ -95,16 +95,15 @@ export async function handleOpenProject(
 
   // Step 2: Read configuration
   const extensionConfig = getExtensionConfig()
-  const configFileName = extensionConfig.configFileName
 
   showOutput(outputChannel, `Starting sync for: ${projectPath}`)
-  showOutput(outputChannel, `Config file: ${configFileName}`)
+  showOutput(outputChannel, `Layout: ${extensionConfig.layout ? 'configured' : 'default (single pane)'}`)
   showOutput(outputChannel, '')
 
   // Step 3: Execute sync
   const syncOptions: SyncOptions = {
     projectPath,
-    configFileName,
+    layout: extensionConfig.layout,
   }
 
   try {

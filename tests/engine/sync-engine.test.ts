@@ -5,10 +5,10 @@
  * - createTerminalAdapter factory
  * - New tab flow: ensureRunning, activateWindow, createTab, splitPane, sendCommand
  * - Tab reuse flow (idempotency): does NOT call splitPane
- * - Config load failure falls back to default config
+ * - Layout from options vs default config
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { TerminalAdapter, TerminalTab } from '@ide-tui-bridge/engine/types/adapter.js'
 
 // ---------------------------------------------------------------------------
@@ -39,21 +39,6 @@ const mockAdapter: TerminalAdapter = {
 // ---------------------------------------------------------------------------
 // Mock external dependencies before importing sync-engine
 // ---------------------------------------------------------------------------
-// Config loader mock - returns default config by default
-vi.mock('@ide-tui-bridge/engine/config/loader.js', () => ({
-  loadConfig: vi.fn().mockResolvedValue({
-    ok: true,
-    value: {
-      version: '1.0',
-      terminal: 'ghostty',
-      layout: {
-        direction: 'none',
-        panes: [{ id: 'main', command: '' }],
-      },
-    },
-  }),
-}))
-
 // Ghostty adapter mock - provide our mock adapter as the singleton
 vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js', () => ({
   ghosttyAdapter: null,
@@ -63,21 +48,12 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js', () => ({
 // Imports after mocks
 // ---------------------------------------------------------------------------
 import { sync } from '@ide-tui-bridge/engine/core/sync-engine.js'
-import { loadConfig } from '@ide-tui-bridge/engine/config/loader.js'
 import { defaultConfig } from '@ide-tui-bridge/engine/config/defaults.js'
-
-const mockLoadConfig = vi.mocked(loadConfig)
 
 // ---------------------------------------------------------------------------
 // We need to intercept the sync function's internal createTerminalAdapter call.
 // Since ESM imports are hoisted, we need to monkey-patch the imported module.
-// The sync-engine module imports ghosttyAdapter from ghostty-adapter.js (which we
-// mocked as null). createTerminalAdapter('ghostty') returns ghosttyAdapter (null).
-// So we need to use vi.spyOn on the sync function's module to override
-// createTerminalAdapter, OR we can test at a higher level by providing the mock
-// at the ghostty-adapter level.
 // ---------------------------------------------------------------------------
-// Better approach: override the mock factory to return a valid adapter
 const ghosttyAdapterModule = await import('@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js')
 // @ts-expect-error - we're replacing the null with a real mock
 ghosttyAdapterModule.ghosttyAdapter = mockAdapter
@@ -103,6 +79,13 @@ beforeEach(() => {
   mockAdapterMethods.sendText.mockResolvedValue(undefined)
   mockAdapterMethods.sendCommand.mockResolvedValue(undefined)
   mockAdapterMethods.navigateToPane.mockResolvedValue(undefined)
+
+  // Use fake timers to avoid real delays in command injection
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 // ---------------------------------------------------------------------------
@@ -110,17 +93,11 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 describe('core/sync-engine: createTerminalAdapter', () => {
   it('should create adapter for ghostty terminal', () => {
-    // The ghosttyAdapter singleton has been replaced with mockAdapter
-    // So createTerminalAdapter('ghostty') should return mockAdapter
-    // We verify by checking the adapter name used internally
     expect(mockAdapter.name).toBe('mock-ghostty')
   })
 
   it('should throw for unsupported terminal type', () => {
-    // We can't easily test this without importing the real module,
-    // so we verify the behavior indirectly through the error message format
     try {
-      // Manually invoke the switch logic
       const config = { ...defaultConfig, terminal: 'alacritty' as 'ghostty' }
       switch (config.terminal) {
         case 'ghostty':
@@ -139,21 +116,17 @@ describe('core/sync-engine: createTerminalAdapter', () => {
 // ---------------------------------------------------------------------------
 describe('core/sync-engine: sync (new tab flow)', () => {
   it('should call ensureRunning, activateWindow, createTab, splitPane, sendCommand for new tab', async () => {
-    // Config returns a two-pane vertical layout
-    const twoPaneConfig = {
-      ...defaultConfig,
-      layout: {
-        direction: 'vertical' as const,
-        panes: [
-          { id: 'left', command: '' },
-          { id: 'right', command: 'vim' },
-        ],
-      },
+    const twoPaneLayout = {
+      direction: 'vertical' as const,
+      panes: [
+        { id: 'left', commands: [] as string[] },
+        { id: 'right', commands: ['vim'] },
+      ],
     }
-    mockLoadConfig.mockResolvedValue({ ok: true, value: twoPaneConfig })
 
     const result = await sync({
       projectPath: '/tmp/test-project',
+      layout: twoPaneLayout,
     })
 
     expect(result.ok).toBe(true)
@@ -169,7 +142,7 @@ describe('core/sync-engine: sync (new tab flow)', () => {
     expect(mockAdapterMethods.splitPane).toHaveBeenCalledWith('right', {
       workingDirectory: '/tmp/test-project',
     })
-    // sendCommand only called for panes with a non-empty command
+    // sendCommand only called for panes with non-empty commands
     expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith('vim')
   })
 })
@@ -186,10 +159,12 @@ describe('core/sync-engine: sync (tab reuse / idempotency)', () => {
     }
     mockAdapterMethods.findTabByProject.mockResolvedValue(existingTab)
 
-    mockLoadConfig.mockResolvedValue({ ok: true, value: defaultConfig })
-
     const result = await sync({
       projectPath: '/tmp/test-project',
+      layout: {
+        direction: 'none',
+        panes: [{ id: 'main', commands: [] }],
+      },
     })
 
     expect(result.ok).toBe(true)
@@ -204,12 +179,10 @@ describe('core/sync-engine: sync (tab reuse / idempotency)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Config load failure tests
+// Default config tests
 // ---------------------------------------------------------------------------
-describe('core/sync-engine: sync (config load failure)', () => {
-  it('should use default config when loadConfig fails', async () => {
-    mockLoadConfig.mockResolvedValue({ ok: false, error: new Error('load failed') })
-
+describe('core/sync-engine: sync (default config)', () => {
+  it('should use default config when no layout is provided', async () => {
     const result = await sync({
       projectPath: '/tmp/test-project',
     })
@@ -221,7 +194,7 @@ describe('core/sync-engine: sync (config load failure)', () => {
 
     expect(mockAdapterMethods.ensureRunning).toHaveBeenCalled()
     expect(mockAdapterMethods.activateWindow).toHaveBeenCalled()
-    // Default config has a single pane with empty command, so sendCommand is not called
+    // Default config has a single pane with empty commands, so sendCommand is not called
     expect(mockAdapterMethods.sendCommand).not.toHaveBeenCalled()
   })
 })
@@ -231,10 +204,12 @@ describe('core/sync-engine: sync (config load failure)', () => {
 // ---------------------------------------------------------------------------
 describe('core/sync-engine: sync (single pane layout)', () => {
   it('should not split pane for single-pane layout', async () => {
-    mockLoadConfig.mockResolvedValue({ ok: true, value: defaultConfig })
-
     const result = await sync({
       projectPath: '/tmp/test-project',
+      layout: {
+        direction: 'none',
+        panes: [{ id: 'main', commands: [] }],
+      },
     })
 
     expect(result.ok).toBe(true)
@@ -251,26 +226,23 @@ describe('core/sync-engine: sync (single pane layout)', () => {
 // ---------------------------------------------------------------------------
 describe('core/sync-engine: sync (three-pane layout)', () => {
   it('should split pane twice for three-pane layout', async () => {
-    const threePaneConfig = {
-      ...defaultConfig,
-      layout: {
-        direction: 'horizontal' as const,
-        panes: [
-          { id: 'top', command: '' },
-          {
-            direction: 'vertical' as const,
-            panes: [
-              { id: 'bottom_left', command: '' },
-              { id: 'bottom_right', command: '' },
-            ],
-          },
-        ],
-      },
+    const threePaneLayout = {
+      direction: 'horizontal' as const,
+      panes: [
+        { id: 'top', commands: [] as string[] },
+        {
+          direction: 'vertical' as const,
+          panes: [
+            { id: 'bottom_left', commands: [] as string[] },
+            { id: 'bottom_right', commands: [] as string[] },
+          ],
+        },
+      ],
     }
-    mockLoadConfig.mockResolvedValue({ ok: true, value: threePaneConfig })
 
     const result = await sync({
       projectPath: '/tmp/test-project',
+      layout: threePaneLayout,
     })
 
     expect(result.ok).toBe(true)
@@ -285,5 +257,32 @@ describe('core/sync-engine: sync (three-pane layout)', () => {
     expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(2, 'right', {
       workingDirectory: '/tmp/test-project',
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Multiple commands per pane tests
+// ---------------------------------------------------------------------------
+describe('core/sync-engine: sync (multiple commands per pane)', () => {
+  it('should execute multiple commands in order with delay', async () => {
+    const multiCmdLayout = {
+      direction: 'none',
+      panes: [{
+        id: 'dev',
+        commands: ['cd /some/path', 'npm install', 'npm run dev'],
+      }],
+    }
+
+    const result = await sync({
+      projectPath: '/tmp/test-project',
+      layout: multiCmdLayout,
+    })
+
+    expect(result.ok).toBe(true)
+
+    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledTimes(3)
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(1, 'cd /some/path')
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(2, 'npm install')
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(3, 'npm run dev')
   })
 })

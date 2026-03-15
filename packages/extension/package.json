@@ -43,10 +43,9 @@
           "default": "/Applications/Ghostty.app",
           "description": "Path to Ghostty.app"
         },
-        "ideTuiBridge.configFileName": {
-          "type": "string",
-          "default": ".contextsync.yml",
-          "description": "Configuration file name"
+        "ideTuiBridge.layout": {
+          "type": "object",
+          "description": "Terminal layout configuration. Example: { \"direction\": \"vertical\", \"panes\": [{ \"id\": \"left\", \"commands\": [\"vim\"] }, { \"id\": \"right\" }] }"
         }
       }
     }

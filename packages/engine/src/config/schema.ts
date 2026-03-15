@@ -13,7 +13,7 @@ import type { LayoutNode, ProjectConfig } from '../types/index.js'
 const PaneLeafSchema = z.object({
   id: z.string(),
   auto_focus: z.boolean().default(false),
-  command: z.string().default(''),
+  commands: z.array(z.string()).default([]),
   cwd: z.string().optional(),
 })
 

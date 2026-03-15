@@ -9,7 +9,7 @@ export type SplitDirection = 'horizontal' | 'vertical' | 'none'
 export interface PaneLeaf {
   id: string
   auto_focus?: boolean
-  command?: string
+  commands?: string[]
   cwd?: string
 }
 

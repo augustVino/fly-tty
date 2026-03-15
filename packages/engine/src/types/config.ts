@@ -13,8 +13,3 @@ export interface ProjectConfig {
   terminal: TerminalType
   layout: LayoutNode
 }
-
-/** Configuration loading options */
-export interface ConfigLoadOptions {
-  configFileName?: string
-}

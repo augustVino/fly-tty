@@ -1,9 +1,0 @@
-version: '1.0'
-terminal: ghostty
-layout:
-  direction: vertical
-  panes:
-    - id: left
-      command: 'ls -a'
-    - id: right
-      command: 'pwd'
