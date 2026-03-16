@@ -18,3 +18,4 @@ coverage/
 # Cursor Hooks 配置（由插件自动生成，不应提交到版本控制）
 .cursor/hooks
 .cursor/hooks.json
+.claude/settings.local.json
