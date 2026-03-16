@@ -98,10 +98,6 @@ export async function handleOpenProject(
   // Step 2: Read configuration
   const extensionConfig = getExtensionConfig()
 
-  showOutput(outputChannel, `Starting sync for: ${projectPath}`)
-  showOutput(outputChannel, `Layout: ${extensionConfig.layout ? 'configured' : 'default (single pane)'}`)
-  showOutput(outputChannel, '')
-
   // Step 3: Execute sync
   const syncOptions: SyncOptions = {
     projectPath,

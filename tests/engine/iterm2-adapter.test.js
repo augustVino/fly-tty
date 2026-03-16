@@ -60,7 +60,10 @@ vitest_1.vi.mock('@ide-tui-bridge/engine/adapters/terminal/iterm2-applescript.js
     writeText: vitest_1.vi.fn().mockResolvedValue(''),
     writeTextNoNewline: vitest_1.vi.fn().mockResolvedValue(''),
     selectTab: vitest_1.vi.fn().mockResolvedValue(''),
+    selectTabInWindow: vitest_1.vi.fn().mockResolvedValue(''),
+    selectWindow: vitest_1.vi.fn().mockResolvedValue(''),
     getTabInfo: vitest_1.vi.fn().mockResolvedValue([]),
+    findSessionByProject: vitest_1.vi.fn().mockResolvedValue(null),
     getSessionIds: vitest_1.vi.fn().mockResolvedValue([]),
     focusSessionById: vitest_1.vi.fn().mockResolvedValue(''),
     getSessionName: vitest_1.vi.fn().mockResolvedValue(''),
@@ -254,23 +257,29 @@ function createAdapter() {
         const tabs = await adapter.listTabs();
         (0, vitest_1.expect)(tabs).toEqual([]);
     });
-    (0, vitest_1.it)('should map tab info to TerminalTab objects', async () => {
+    (0, vitest_1.it)('should map tab info to TerminalTab objects with windowId from windowIndex', async () => {
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: '[WorkspaceSync] my-project' },
-            { id: 2, title: 'Untitled' },
+            { id: 1, title: '[WorkspaceSync] my-project', windowIndex: 1 },
+            { id: 2, title: 'Untitled', windowIndex: 1 },
+            { id: 1, title: '[WorkspaceSync] other-project', windowIndex: 2 },
         ]);
         const adapter = createAdapter();
         const tabs = await adapter.listTabs();
-        (0, vitest_1.expect)(tabs).toHaveLength(2);
+        (0, vitest_1.expect)(tabs).toHaveLength(3);
         (0, vitest_1.expect)(tabs[0]).toEqual({
             id: '1',
             title: '[WorkspaceSync] my-project',
-            windowId: 'front',
+            windowId: '1',
         });
         (0, vitest_1.expect)(tabs[1]).toEqual({
             id: '2',
             title: 'Untitled',
-            windowId: 'front',
+            windowId: '1',
+        });
+        (0, vitest_1.expect)(tabs[2]).toEqual({
+            id: '1',
+            title: '[WorkspaceSync] other-project',
+            windowId: '2',
         });
     });
 });
@@ -278,11 +287,25 @@ function createAdapter() {
 // findTabByProject
 // ---------------------------------------------------------------------------
 (0, vitest_1.describe)('ITerm2Adapter: findTabByProject', () => {
-    (0, vitest_1.it)('should find tab matching [WorkspaceSync] prefix with directory name', async () => {
+    (0, vitest_1.it)('should find tab via cross-window user variable search (primary)', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce({
+            windowIndex: 2,
+            tabIndex: 3,
+        });
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('3');
+        (0, vitest_1.expect)(tab?.title).toBe('[WorkspaceSync] my-project');
+        (0, vitest_1.expect)(tab?.windowId).toBe('2');
+        (0, vitest_1.expect)(iterm2Script.findSessionByProject).toHaveBeenCalledWith('/Users/dev/my-project');
+    });
+    (0, vitest_1.it)('should fall back to title match when user variable not found', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'Default' },
-            { id: 2, title: '[WorkspaceSync] my-project' },
-            { id: 3, title: 'Another' },
+            { id: 1, title: 'Default', windowIndex: 1 },
+            { id: 2, title: '[WorkspaceSync] my-project', windowIndex: 1 },
+            { id: 3, title: 'Another', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project');
@@ -290,28 +313,31 @@ function createAdapter() {
         (0, vitest_1.expect)(tab?.title).toBe('[WorkspaceSync] my-project');
         (0, vitest_1.expect)(tab?.id).toBe('2');
     });
-    (0, vitest_1.it)('should return null when no matching tab exists', async () => {
+    (0, vitest_1.it)('should return null when no matching tab exists across any method', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'Default' },
-            { id: 2, title: 'Another' },
+            { id: 1, title: 'Default', windowIndex: 1 },
+            { id: 2, title: 'Another', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project');
         (0, vitest_1.expect)(tab).toBeNull();
     });
     (0, vitest_1.it)('should handle trailing slash in project path', async () => {
-        vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: '[WorkspaceSync] my-project' },
-        ]);
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce({
+            windowIndex: 1,
+            tabIndex: 1,
+        });
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project/');
         (0, vitest_1.expect)(tab).not.toBeNull();
         (0, vitest_1.expect)(tab?.title).toBe('[WorkspaceSync] my-project');
     });
     (0, vitest_1.it)('should not match partial directory names', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: '[WorkspaceSync] project' },
-            { id: 2, title: '[WorkspaceSync] project-backup' },
+            { id: 1, title: '[WorkspaceSync] project', windowIndex: 1 },
+            { id: 2, title: '[WorkspaceSync] project-backup', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/project');
@@ -319,14 +345,15 @@ function createAdapter() {
         (0, vitest_1.expect)(tab?.id).toBe('1');
     });
     (0, vitest_1.it)('should fall back to working directory match when title is overwritten', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         // Session name was overwritten by shell prompt
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'dev@host:~' },
-            { id: 2, title: '[WorkspaceSync] other-project' },
+            { id: 1, title: 'dev@host:~', windowIndex: 1 },
+            { id: 2, title: '[WorkspaceSync] other-project', windowIndex: 1 },
         ]);
         vitest_1.vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-            { id: 1, cwd: '/Users/dev/my-project' },
-            { id: 2, cwd: '/Users/dev/other-project' },
+            { id: 1, cwd: '/Users/dev/my-project', windowIndex: 1 },
+            { id: 2, cwd: '/Users/dev/other-project', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project');
@@ -335,64 +362,63 @@ function createAdapter() {
         (0, vitest_1.expect)(tab?.title).toBe('dev@host:~');
     });
     (0, vitest_1.it)('should return null when no title or cwd match exists', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'dev@host:~' },
-            { id: 2, title: 'bash' },
+            { id: 1, title: 'dev@host:~', windowIndex: 1 },
+            { id: 2, title: 'bash', windowIndex: 1 },
         ]);
-        vitest_1.vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([]);
         vitest_1.vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-            { id: 1, cwd: '/Users/dev/other-project' },
-            { id: 2, cwd: '/tmp' },
+            { id: 1, cwd: '/Users/dev/other-project', windowIndex: 1 },
+            { id: 2, cwd: '/tmp', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project');
         (0, vitest_1.expect)(tab).toBeNull();
     });
-    (0, vitest_1.it)('should match by user variable when title is overwritten', async () => {
-        // Session name was overwritten by shell prompt
-        vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'dev@host:~' },
-            { id: 2, title: 'other@host:~' },
-        ]);
-        // User variable still has the correct path
-        vitest_1.vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([
-            { id: 1, projectPath: '/Users/dev/my-project' },
-            { id: 2, projectPath: '/Users/dev/other-project' },
-        ]);
-        const adapter = createAdapter();
-        const tab = await adapter.findTabByProject('/Users/dev/my-project');
-        (0, vitest_1.expect)(tab).not.toBeNull();
-        (0, vitest_1.expect)(tab?.id).toBe('1');
-        (0, vitest_1.expect)(tab?.title).toBe('dev@host:~');
-    });
     (0, vitest_1.it)('should match by directory name in title as tertiary fallback', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         // Title was overwritten but still contains directory name
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'dev@host:~/my-project' },
-            { id: 2, title: 'dev@host:~/other-project' },
+            { id: 1, title: 'dev@host:~/my-project', windowIndex: 1 },
+            { id: 2, title: 'dev@host:~/other-project', windowIndex: 1 },
         ]);
-        vitest_1.vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/my-project');
         (0, vitest_1.expect)(tab).not.toBeNull();
         (0, vitest_1.expect)(tab?.id).toBe('1');
     });
     (0, vitest_1.it)('should not use directory name fallback when multiple tabs match', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
         // Two tabs contain "project" - ambiguous, skip to next fallback
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'dev@host:~/project' },
-            { id: 2, title: 'dev@host:~/project-backup' },
+            { id: 1, title: 'dev@host:~/project', windowIndex: 1 },
+            { id: 2, title: 'dev@host:~/project-backup', windowIndex: 1 },
         ]);
-        vitest_1.vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([]);
         vitest_1.vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-            { id: 1, cwd: '/Users/dev/project' },
-            { id: 2, cwd: '/Users/dev/project-backup' },
+            { id: 1, cwd: '/Users/dev/project', windowIndex: 1 },
+            { id: 2, cwd: '/Users/dev/project-backup', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.findTabByProject('/Users/dev/project');
         // Should find via cwd fallback (last resort), not ambiguous dir match
         (0, vitest_1.expect)(tab).not.toBeNull();
         (0, vitest_1.expect)(tab?.id).toBe('1');
+    });
+    (0, vitest_1.it)('should match cwd across different windows correctly', async () => {
+        vitest_1.vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null);
+        vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
+            { id: 1, title: 'dev@host:~', windowIndex: 1 },
+            { id: 2, title: 'bash', windowIndex: 2 },
+        ]);
+        vitest_1.vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
+            { id: 1, cwd: '/Users/dev/other-project', windowIndex: 1 },
+            { id: 2, cwd: '/Users/dev/my-project', windowIndex: 2 },
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('2');
+        (0, vitest_1.expect)(tab?.windowId).toBe('2');
     });
 });
 // ---------------------------------------------------------------------------
@@ -403,14 +429,14 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1', 'sid-2']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'First tab' },
-            { id: 2, title: 'New tab' },
+            { id: 1, title: 'First tab', windowIndex: 1 },
+            { id: 2, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.createTab();
         // Advance past SETTLE_DELAY_MS (500ms)
         await vitest_1.vi.advanceTimersByTimeAsync(500);
-        (0, vitest_1.expect)(tab).toEqual({ id: '2', title: 'New tab', windowId: 'front' });
+        (0, vitest_1.expect)(tab).toEqual({ id: '2', title: 'New tab', windowId: '1' });
         (0, vitest_1.expect)(iterm2Script.createTab).toHaveBeenCalledOnce();
         (0, vitest_1.expect)(iterm2Script.getSessionIds).toHaveBeenCalledOnce();
     });
@@ -419,8 +445,8 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.setSessionName).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'First tab' },
-            { id: 2, title: 'New tab' },
+            { id: 1, title: 'First tab', windowIndex: 1 },
+            { id: 2, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         const tab = await adapter.createTab({
@@ -430,7 +456,7 @@ function createAdapter() {
         (0, vitest_1.expect)(tab).toEqual({
             id: '2',
             title: '[WorkspaceSync] my-project',
-            windowId: 'front',
+            windowId: '1',
         });
         (0, vitest_1.expect)(iterm2Script.setSessionName).toHaveBeenCalledWith('[WorkspaceSync] my-project');
     });
@@ -439,8 +465,8 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.writeText).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'First tab' },
-            { id: 2, title: 'New tab' },
+            { id: 1, title: 'First tab', windowIndex: 1 },
+            { id: 2, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         await adapter.createTab({
@@ -457,7 +483,7 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'New tab' },
+            { id: 1, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         await adapter.createTab();
@@ -477,8 +503,8 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.setSessionVar).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'First tab' },
-            { id: 2, title: 'New tab' },
+            { id: 1, title: 'First tab', windowIndex: 1 },
+            { id: 2, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         await adapter.createTab({
@@ -492,7 +518,7 @@ function createAdapter() {
         vitest_1.vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('');
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
         vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-            { id: 1, title: 'New tab' },
+            { id: 1, title: 'New tab', windowIndex: 1 },
         ]);
         const adapter = createAdapter();
         await adapter.createTab();
@@ -504,13 +530,28 @@ function createAdapter() {
 // focusTab
 // ---------------------------------------------------------------------------
 (0, vitest_1.describe)('ITerm2Adapter: focusTab', () => {
-    (0, vitest_1.it)('should select tab by numeric index and refresh session IDs', async () => {
+    (0, vitest_1.it)('should select tab in front window and refresh session IDs', async () => {
         vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1', 'sid-2']);
         const adapter = createAdapter();
-        await adapter.focusTab({ id: '2', title: 'Test' });
+        await adapter.focusTab({ id: '2', title: 'Test', windowId: '1' });
         await vitest_1.vi.advanceTimersByTimeAsync(500);
-        (0, vitest_1.expect)(iterm2Script.selectTab).toHaveBeenCalledWith(2);
+        (0, vitest_1.expect)(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(2, 1);
         (0, vitest_1.expect)(iterm2Script.getSessionIds).toHaveBeenCalledOnce();
+    });
+    (0, vitest_1.it)('should select tab in non-front window via selectTabInWindow', async () => {
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
+        const adapter = createAdapter();
+        await adapter.focusTab({ id: '3', title: 'Test', windowId: '2' });
+        await vitest_1.vi.advanceTimersByTimeAsync(500);
+        (0, vitest_1.expect)(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(3, 2);
+        (0, vitest_1.expect)(iterm2Script.selectTab).not.toHaveBeenCalled();
+    });
+    (0, vitest_1.it)('should default to window 1 when windowId is not set', async () => {
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
+        const adapter = createAdapter();
+        await adapter.focusTab({ id: '1', title: 'Test' });
+        await vitest_1.vi.advanceTimersByTimeAsync(500);
+        (0, vitest_1.expect)(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(1, 1);
     });
     (0, vitest_1.it)('should throw error for non-numeric tab id', async () => {
         const adapter = createAdapter();
@@ -559,8 +600,8 @@ function createAdapter() {
             'sid-1',
             'sid-new',
         ]);
-        vitest_1.vi.mocked(iterm2Script.focusSessionById).mockResolvedValueOnce('');
-        vitest_1.vi.mocked(iterm2Script.writeText).mockResolvedValueOnce('');
+        vitest_1.vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('');
+        vitest_1.vi.mocked(iterm2Script.writeText).mockResolvedValue('');
         const adapter = createAdapter();
         await adapter.splitPane('right', { workingDirectory: '/Users/dev/subdir' });
         await vitest_1.vi.advanceTimersByTimeAsync(1200);
@@ -580,6 +621,47 @@ function createAdapter() {
         await vitest_1.vi.advanceTimersByTimeAsync(500);
         (0, vitest_1.expect)(iterm2Script.focusSessionById).not.toHaveBeenCalled();
         (0, vitest_1.expect)(iterm2Script.writeText).not.toHaveBeenCalled();
+    });
+    (0, vitest_1.it)('should set user variable on new session when currentProjectPath is set', async () => {
+        // Set up adapter with a prior createTab that saved currentProjectPath
+        vitest_1.vi.mocked(iterm2Script.createTab).mockResolvedValue('');
+        vitest_1.vi.mocked(iterm2Script.writeText).mockResolvedValue('');
+        vitest_1.vi.mocked(iterm2Script.setSessionVar).mockResolvedValue('');
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
+        vitest_1.vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
+            { id: 1, title: 'New tab', windowIndex: 1 },
+        ]);
+        const adapter = createAdapter();
+        await adapter.createTab({
+            title: '[WorkspaceSync] test-project',
+            workingDirectory: '/Users/dev/test-project',
+        });
+        await vitest_1.vi.advanceTimersByTimeAsync(1000);
+        vitest_1.vi.clearAllMocks();
+        // Now split — new session should get the user variable
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce([
+            'sid-1',
+            'sid-new',
+        ]);
+        vitest_1.vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('');
+        vitest_1.vi.mocked(iterm2Script.setSessionVar).mockResolvedValue('');
+        await adapter.splitPane('right');
+        await vitest_1.vi.advanceTimersByTimeAsync(700);
+        (0, vitest_1.expect)(iterm2Script.focusSessionById).toHaveBeenCalledWith('sid-new');
+        (0, vitest_1.expect)(iterm2Script.setSessionVar).toHaveBeenCalledWith('workspaceProjectPath', '/Users/dev/test-project');
+    });
+    (0, vitest_1.it)('should not set user variable when currentProjectPath is null', async () => {
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1']);
+        vitest_1.vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce([
+            'sid-1',
+            'sid-new',
+        ]);
+        vitest_1.vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('');
+        const adapter = createAdapter();
+        await adapter.splitPane('right');
+        await vitest_1.vi.advanceTimersByTimeAsync(700);
+        (0, vitest_1.expect)(iterm2Script.setSessionVar).not.toHaveBeenCalled();
     });
 });
 // ---------------------------------------------------------------------------

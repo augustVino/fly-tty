@@ -28,7 +28,10 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/iterm2-applescript.js', () => 
   writeText: vi.fn().mockResolvedValue(''),
   writeTextNoNewline: vi.fn().mockResolvedValue(''),
   selectTab: vi.fn().mockResolvedValue(''),
+  selectTabInWindow: vi.fn().mockResolvedValue(''),
+  selectWindow: vi.fn().mockResolvedValue(''),
   getTabInfo: vi.fn().mockResolvedValue([]),
+  findSessionByProject: vi.fn().mockResolvedValue(null),
   getSessionIds: vi.fn().mockResolvedValue([]),
   focusSessionById: vi.fn().mockResolvedValue(''),
   getSessionName: vi.fn().mockResolvedValue(''),
@@ -262,25 +265,31 @@ describe('ITerm2Adapter: listTabs', () => {
     expect(tabs).toEqual([])
   })
 
-  it('should map tab info to TerminalTab objects', async () => {
+  it('should map tab info to TerminalTab objects with windowId from windowIndex', async () => {
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: '[WorkspaceSync] my-project' },
-      { id: 2, title: 'Untitled' },
+      { id: 1, title: '[WorkspaceSync] my-project', windowIndex: 1 },
+      { id: 2, title: 'Untitled', windowIndex: 1 },
+      { id: 1, title: '[WorkspaceSync] other-project', windowIndex: 2 },
     ])
 
     const adapter = createAdapter()
     const tabs = await adapter.listTabs()
 
-    expect(tabs).toHaveLength(2)
+    expect(tabs).toHaveLength(3)
     expect(tabs[0]).toEqual({
       id: '1',
       title: '[WorkspaceSync] my-project',
-      windowId: 'front',
+      windowId: '1',
     })
     expect(tabs[1]).toEqual({
       id: '2',
       title: 'Untitled',
-      windowId: 'front',
+      windowId: '1',
+    })
+    expect(tabs[2]).toEqual({
+      id: '1',
+      title: '[WorkspaceSync] other-project',
+      windowId: '2',
     })
   })
 })
@@ -289,11 +298,30 @@ describe('ITerm2Adapter: listTabs', () => {
 // findTabByProject
 // ---------------------------------------------------------------------------
 describe('ITerm2Adapter: findTabByProject', () => {
-  it('should find tab matching [WorkspaceSync] prefix with directory name', async () => {
+  it('should find tab via cross-window user variable search (primary)', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce({
+      windowIndex: 2,
+      tabIndex: 3,
+    })
+
+    const adapter = createAdapter()
+    const tab = await adapter.findTabByProject('/Users/dev/my-project')
+
+    expect(tab).not.toBeNull()
+    expect(tab?.id).toBe('3')
+    expect(tab?.title).toBe('[WorkspaceSync] my-project')
+    expect(tab?.windowId).toBe('2')
+    expect(iterm2Script.findSessionByProject).toHaveBeenCalledWith(
+      '/Users/dev/my-project',
+    )
+  })
+
+  it('should fall back to title match when user variable not found', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'Default' },
-      { id: 2, title: '[WorkspaceSync] my-project' },
-      { id: 3, title: 'Another' },
+      { id: 1, title: 'Default', windowIndex: 1 },
+      { id: 2, title: '[WorkspaceSync] my-project', windowIndex: 1 },
+      { id: 3, title: 'Another', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -304,10 +332,11 @@ describe('ITerm2Adapter: findTabByProject', () => {
     expect(tab?.id).toBe('2')
   })
 
-  it('should return null when no matching tab exists', async () => {
+  it('should return null when no matching tab exists across any method', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'Default' },
-      { id: 2, title: 'Another' },
+      { id: 1, title: 'Default', windowIndex: 1 },
+      { id: 2, title: 'Another', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -317,9 +346,10 @@ describe('ITerm2Adapter: findTabByProject', () => {
   })
 
   it('should handle trailing slash in project path', async () => {
-    vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: '[WorkspaceSync] my-project' },
-    ])
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce({
+      windowIndex: 1,
+      tabIndex: 1,
+    })
 
     const adapter = createAdapter()
     const tab = await adapter.findTabByProject('/Users/dev/my-project/')
@@ -329,9 +359,10 @@ describe('ITerm2Adapter: findTabByProject', () => {
   })
 
   it('should not match partial directory names', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: '[WorkspaceSync] project' },
-      { id: 2, title: '[WorkspaceSync] project-backup' },
+      { id: 1, title: '[WorkspaceSync] project', windowIndex: 1 },
+      { id: 2, title: '[WorkspaceSync] project-backup', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -342,14 +373,15 @@ describe('ITerm2Adapter: findTabByProject', () => {
   })
 
   it('should fall back to working directory match when title is overwritten', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     // Session name was overwritten by shell prompt
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'dev@host:~' },
-      { id: 2, title: '[WorkspaceSync] other-project' },
+      { id: 1, title: 'dev@host:~', windowIndex: 1 },
+      { id: 2, title: '[WorkspaceSync] other-project', windowIndex: 1 },
     ])
     vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-      { id: 1, cwd: '/Users/dev/my-project' },
-      { id: 2, cwd: '/Users/dev/other-project' },
+      { id: 1, cwd: '/Users/dev/my-project', windowIndex: 1 },
+      { id: 2, cwd: '/Users/dev/other-project', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -361,14 +393,14 @@ describe('ITerm2Adapter: findTabByProject', () => {
   })
 
   it('should return null when no title or cwd match exists', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'dev@host:~' },
-      { id: 2, title: 'bash' },
+      { id: 1, title: 'dev@host:~', windowIndex: 1 },
+      { id: 2, title: 'bash', windowIndex: 1 },
     ])
-    vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([])
     vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-      { id: 1, cwd: '/Users/dev/other-project' },
-      { id: 2, cwd: '/tmp' },
+      { id: 1, cwd: '/Users/dev/other-project', windowIndex: 1 },
+      { id: 2, cwd: '/tmp', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -377,33 +409,13 @@ describe('ITerm2Adapter: findTabByProject', () => {
     expect(tab).toBeNull()
   })
 
-  it('should match by user variable when title is overwritten', async () => {
-    // Session name was overwritten by shell prompt
-    vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'dev@host:~' },
-      { id: 2, title: 'other@host:~' },
-    ])
-    // User variable still has the correct path
-    vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([
-      { id: 1, projectPath: '/Users/dev/my-project' },
-      { id: 2, projectPath: '/Users/dev/other-project' },
-    ])
-
-    const adapter = createAdapter()
-    const tab = await adapter.findTabByProject('/Users/dev/my-project')
-
-    expect(tab).not.toBeNull()
-    expect(tab?.id).toBe('1')
-    expect(tab?.title).toBe('dev@host:~')
-  })
-
   it('should match by directory name in title as tertiary fallback', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     // Title was overwritten but still contains directory name
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'dev@host:~/my-project' },
-      { id: 2, title: 'dev@host:~/other-project' },
+      { id: 1, title: 'dev@host:~/my-project', windowIndex: 1 },
+      { id: 2, title: 'dev@host:~/other-project', windowIndex: 1 },
     ])
-    vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([])
 
     const adapter = createAdapter()
     const tab = await adapter.findTabByProject('/Users/dev/my-project')
@@ -413,15 +425,15 @@ describe('ITerm2Adapter: findTabByProject', () => {
   })
 
   it('should not use directory name fallback when multiple tabs match', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
     // Two tabs contain "project" - ambiguous, skip to next fallback
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'dev@host:~/project' },
-      { id: 2, title: 'dev@host:~/project-backup' },
+      { id: 1, title: 'dev@host:~/project', windowIndex: 1 },
+      { id: 2, title: 'dev@host:~/project-backup', windowIndex: 1 },
     ])
-    vi.mocked(iterm2Script.getTabProjectPaths).mockResolvedValueOnce([])
     vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
-      { id: 1, cwd: '/Users/dev/project' },
-      { id: 2, cwd: '/Users/dev/project-backup' },
+      { id: 1, cwd: '/Users/dev/project', windowIndex: 1 },
+      { id: 2, cwd: '/Users/dev/project-backup', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -430,6 +442,25 @@ describe('ITerm2Adapter: findTabByProject', () => {
     // Should find via cwd fallback (last resort), not ambiguous dir match
     expect(tab).not.toBeNull()
     expect(tab?.id).toBe('1')
+  })
+
+  it('should match cwd across different windows correctly', async () => {
+    vi.mocked(iterm2Script.findSessionByProject).mockResolvedValueOnce(null)
+    vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
+      { id: 1, title: 'dev@host:~', windowIndex: 1 },
+      { id: 2, title: 'bash', windowIndex: 2 },
+    ])
+    vi.mocked(iterm2Script.getTabWorkingDirectories).mockResolvedValueOnce([
+      { id: 1, cwd: '/Users/dev/other-project', windowIndex: 1 },
+      { id: 2, cwd: '/Users/dev/my-project', windowIndex: 2 },
+    ])
+
+    const adapter = createAdapter()
+    const tab = await adapter.findTabByProject('/Users/dev/my-project')
+
+    expect(tab).not.toBeNull()
+    expect(tab?.id).toBe('2')
+    expect(tab?.windowId).toBe('2')
   })
 })
 
@@ -441,8 +472,8 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1', 'sid-2'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'First tab' },
-      { id: 2, title: 'New tab' },
+      { id: 1, title: 'First tab', windowIndex: 1 },
+      { id: 2, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -451,7 +482,7 @@ describe('ITerm2Adapter: createTab', () => {
     // Advance past SETTLE_DELAY_MS (500ms)
     await vi.advanceTimersByTimeAsync(500)
 
-    expect(tab).toEqual({ id: '2', title: 'New tab', windowId: 'front' })
+    expect(tab).toEqual({ id: '2', title: 'New tab', windowId: '1' })
     expect(iterm2Script.createTab).toHaveBeenCalledOnce()
     expect(iterm2Script.getSessionIds).toHaveBeenCalledOnce()
   })
@@ -461,8 +492,8 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.setSessionName).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'First tab' },
-      { id: 2, title: 'New tab' },
+      { id: 1, title: 'First tab', windowIndex: 1 },
+      { id: 2, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -475,7 +506,7 @@ describe('ITerm2Adapter: createTab', () => {
     expect(tab).toEqual({
       id: '2',
       title: '[WorkspaceSync] my-project',
-      windowId: 'front',
+      windowId: '1',
     })
     expect(iterm2Script.setSessionName).toHaveBeenCalledWith('[WorkspaceSync] my-project')
   })
@@ -485,8 +516,8 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.writeText).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'First tab' },
-      { id: 2, title: 'New tab' },
+      { id: 1, title: 'First tab', windowIndex: 1 },
+      { id: 2, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -507,7 +538,7 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'New tab' },
+      { id: 1, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -533,8 +564,8 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.setSessionVar).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'First tab' },
-      { id: 2, title: 'New tab' },
+      { id: 1, title: 'First tab', windowIndex: 1 },
+      { id: 2, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -555,7 +586,7 @@ describe('ITerm2Adapter: createTab', () => {
     vi.mocked(iterm2Script.createTab).mockResolvedValueOnce('')
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
     vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
-      { id: 1, title: 'New tab' },
+      { id: 1, title: 'New tab', windowIndex: 1 },
     ])
 
     const adapter = createAdapter()
@@ -571,16 +602,39 @@ describe('ITerm2Adapter: createTab', () => {
 // focusTab
 // ---------------------------------------------------------------------------
 describe('ITerm2Adapter: focusTab', () => {
-  it('should select tab by numeric index and refresh session IDs', async () => {
+  it('should select tab in front window and refresh session IDs', async () => {
     vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1', 'sid-2'])
 
     const adapter = createAdapter()
-    await adapter.focusTab({ id: '2', title: 'Test' })
+    await adapter.focusTab({ id: '2', title: 'Test', windowId: '1' })
 
     await vi.advanceTimersByTimeAsync(500)
 
-    expect(iterm2Script.selectTab).toHaveBeenCalledWith(2)
+    expect(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(2, 1)
     expect(iterm2Script.getSessionIds).toHaveBeenCalledOnce()
+  })
+
+  it('should select tab in non-front window via selectTabInWindow', async () => {
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
+
+    const adapter = createAdapter()
+    await adapter.focusTab({ id: '3', title: 'Test', windowId: '2' })
+
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(3, 2)
+    expect(iterm2Script.selectTab).not.toHaveBeenCalled()
+  })
+
+  it('should default to window 1 when windowId is not set', async () => {
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
+
+    const adapter = createAdapter()
+    await adapter.focusTab({ id: '1', title: 'Test' })
+
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(iterm2Script.selectTabInWindow).toHaveBeenCalledWith(1, 1)
   })
 
   it('should throw error for non-numeric tab id', async () => {
@@ -644,8 +698,8 @@ describe('ITerm2Adapter: splitPane', () => {
       'sid-1',
       'sid-new',
     ])
-    vi.mocked(iterm2Script.focusSessionById).mockResolvedValueOnce('')
-    vi.mocked(iterm2Script.writeText).mockResolvedValueOnce('')
+    vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('')
+    vi.mocked(iterm2Script.writeText).mockResolvedValue('')
 
     const adapter = createAdapter()
     await adapter.splitPane('right', { workingDirectory: '/Users/dev/subdir' })
@@ -672,6 +726,58 @@ describe('ITerm2Adapter: splitPane', () => {
 
     expect(iterm2Script.focusSessionById).not.toHaveBeenCalled()
     expect(iterm2Script.writeText).not.toHaveBeenCalled()
+  })
+
+  it('should set user variable on new session when currentProjectPath is set', async () => {
+    // Set up adapter with a prior createTab that saved currentProjectPath
+    vi.mocked(iterm2Script.createTab).mockResolvedValue('')
+    vi.mocked(iterm2Script.writeText).mockResolvedValue('')
+    vi.mocked(iterm2Script.setSessionVar).mockResolvedValue('')
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
+    vi.mocked(iterm2Script.getTabInfo).mockResolvedValueOnce([
+      { id: 1, title: 'New tab', windowIndex: 1 },
+    ])
+
+    const adapter = createAdapter()
+    await adapter.createTab({
+      title: '[WorkspaceSync] test-project',
+      workingDirectory: '/Users/dev/test-project',
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+    vi.clearAllMocks()
+
+    // Now split — new session should get the user variable
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce([
+      'sid-1',
+      'sid-new',
+    ])
+    vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('')
+    vi.mocked(iterm2Script.setSessionVar).mockResolvedValue('')
+
+    await adapter.splitPane('right')
+    await vi.advanceTimersByTimeAsync(700)
+
+    expect(iterm2Script.focusSessionById).toHaveBeenCalledWith('sid-new')
+    expect(iterm2Script.setSessionVar).toHaveBeenCalledWith(
+      'workspaceProjectPath',
+      '/Users/dev/test-project',
+    )
+  })
+
+  it('should not set user variable when currentProjectPath is null', async () => {
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce(['sid-1'])
+    vi.mocked(iterm2Script.getSessionIds).mockResolvedValueOnce([
+      'sid-1',
+      'sid-new',
+    ])
+    vi.mocked(iterm2Script.focusSessionById).mockResolvedValue('')
+
+    const adapter = createAdapter()
+    await adapter.splitPane('right')
+    await vi.advanceTimersByTimeAsync(700)
+
+    expect(iterm2Script.setSessionVar).not.toHaveBeenCalled()
   })
 })
 

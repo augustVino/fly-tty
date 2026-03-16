@@ -115,6 +115,12 @@ export class ITerm2Adapter implements TerminalAdapter {
    */
   private cachedSessionIds: readonly string[] = []
 
+  /**
+   * Current workspace project path, saved during createTab().
+   * Used to propagate user variable to split panes.
+   */
+  private currentProjectPath: string | null = null
+
   get name(): string {
     return 'iterm2'
   }
@@ -140,24 +146,28 @@ export class ITerm2Adapter implements TerminalAdapter {
     return tabInfos.map((info) => ({
       id: String(info.id),
       title: info.title,
-      windowId: 'front',
+      windowId: String(info.windowIndex),
     }))
   }
 
   async findTabByProject(projectPath: string): Promise<TerminalTab | null> {
+    // Primary: cross-window search by user variable (most reliable)
+    const found = await iterm2Script.findSessionByProject(projectPath)
+    if (found) {
+      return {
+        id: String(found.tabIndex),
+        title: buildTabTitle(projectPath),
+        windowId: String(found.windowIndex),
+      }
+    }
+
+    // Fallback chain using cross-window search functions
     const tabs = await this.listTabs()
     const expectedTitle = buildTabTitle(projectPath)
 
-    // Primary: exact title match
+    // Secondary: exact title match
     const titleMatch = tabs.find((tab) => tab.title === expectedTitle)
     if (titleMatch) return titleMatch
-
-    // Secondary: match by user variable (immune to shell escape sequences)
-    const tabPaths = await iterm2Script.getTabProjectPaths()
-    const varMatch = tabPaths.find((info) => info.projectPath === projectPath)
-    if (varMatch) {
-      return tabs.find((tab) => tab.id === String(varMatch.id)) ?? null
-    }
 
     // Tertiary: directory name in title (like Ghostty's fallback)
     const dirName = extractDirName(projectPath)
@@ -168,7 +178,12 @@ export class ITerm2Adapter implements TerminalAdapter {
     const tabCwds = await iterm2Script.getTabWorkingDirectories()
     const cwdMatch = tabCwds.find((info) => info.cwd === projectPath)
     if (cwdMatch) {
-      return tabs.find((tab) => tab.id === String(cwdMatch.id)) ?? null
+      const windowId = String(cwdMatch.windowIndex)
+      return (
+        tabs.find(
+          (tab) => tab.id === String(cwdMatch.id) && tab.windowId === windowId,
+        ) ?? null
+      )
     }
 
     return null
@@ -176,6 +191,9 @@ export class ITerm2Adapter implements TerminalAdapter {
 
   async createTab(options?: CreateTabOptions): Promise<TerminalTab> {
     const { title, workingDirectory } = options ?? {}
+
+    // Save project path for splitPane user variable propagation
+    this.currentProjectPath = workingDirectory ?? null
 
     await iterm2Script.createTab()
 
@@ -220,10 +238,14 @@ export class ITerm2Adapter implements TerminalAdapter {
 
   async focusTab(tab: TerminalTab): Promise<void> {
     const tabIndex = parseInt(tab.id, 10)
+    const windowIndex = tab.windowId ? parseInt(tab.windowId, 10) : 1
+
     if (Number.isNaN(tabIndex) || tabIndex < 1) {
       throw new Error(`Invalid tab id: "${tab.id}"`)
     }
-    await iterm2Script.selectTab(tabIndex)
+
+    // Select tab in the target window (brings non-front windows to front)
+    await iterm2Script.selectTabInWindow(tabIndex, windowIndex)
 
     // Refresh cached session IDs after switching tabs
     await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
@@ -248,13 +270,23 @@ export class ITerm2Adapter implements TerminalAdapter {
     const idsAfter = await iterm2Script.getSessionIds()
     const newSessionId = idsAfter.find((id) => !idsBefore.includes(id))
 
-    if (workingDirectory && newSessionId) {
-      // Explicitly focus the new session before sending cd,
-      // because "current session" may not have updated after split
+    // Focus new session if needed for any configuration
+    if (newSessionId && (workingDirectory || this.currentProjectPath)) {
       await iterm2Script.focusSessionById(newSessionId)
       await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+
+    if (workingDirectory && newSessionId) {
       await iterm2Script.writeText(`cd "${workingDirectory}"`)
       await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
+    }
+
+    // Propagate user variable to new session for reliable tab reuse
+    if (this.currentProjectPath && newSessionId) {
+      await iterm2Script.setSessionVar(
+        'workspaceProjectPath',
+        this.currentProjectPath,
+      )
     }
 
     // Refresh cached session IDs after split

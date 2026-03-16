@@ -82,7 +82,7 @@ export async function writeTextNoNewline(text: string): Promise<string> {
 }
 
 /**
- * Select a specific tab by 1-based index.
+ * Select a specific tab by 1-based index in the front window.
  */
 export async function selectTab(tabIndex: number): Promise<string> {
   return runAppleScript(
@@ -91,39 +91,85 @@ export async function selectTab(tabIndex: number): Promise<string> {
 }
 
 /**
- * Get tab info for all tabs in the front window.
- * Returns an array of { id, title } objects.
- *
- * Checks session name first, then falls back to the
- * `user.workspaceProjectPath` variable (immune to shell escape sequences).
- *
- * Uses newline + tab delimited output since session name
- * is unlikely to contain these characters.
+ * Bring a specific window to the front by selecting its first tab.
  */
-export async function getTabInfo(): Promise<readonly { readonly id: number; readonly title: string }[]> {
+export async function selectWindow(windowIndex: number): Promise<string> {
+  return runAppleScript(
+    `tell application "iTerm"\n` +
+    `  activate\n` +
+    `  tell tab 1 of window ${windowIndex} to select\n` +
+    `end tell`
+  )
+}
+
+/**
+ * Select a specific tab by 1-based index within a specific window.
+ * Brings the window to front and selects the tab in one step.
+ */
+export async function selectTabInWindow(
+  tabIndex: number,
+  windowIndex: number,
+): Promise<string> {
+  return runAppleScript(
+    `tell application "iTerm"\n` +
+    `  activate\n` +
+    `  tell tab ${tabIndex} of window ${windowIndex} to select\n` +
+    `end tell`
+  )
+}
+
+/**
+ * Get tab info for all tabs across all windows.
+ * Returns an array of { id, title, windowIndex } objects.
+ *
+ * Primary: uses `user.workspaceProjectPath` variable to construct
+ * `[WorkspaceSync] <dirname>` title (immune to shell escape sequences).
+ * Secondary: checks if session name starts with `[WorkspaceSync]`.
+ * Fallback: uses first session's name.
+ *
+ * Output format: `windowIndex:tabIndex\ttitle\n`
+ */
+export async function getTabInfo(): Promise<readonly { readonly id: number; readonly title: string; readonly windowIndex: number }[]> {
   const raw = await runAppleScript(
     'tell application "iTerm"\n' +
     '  set output to ""\n' +
-    '  set tabCount to count of tabs of front window\n' +
-    '  repeat with i from 1 to tabCount\n' +
-    '    set foundName to ""\n' +
-    '    repeat with s in sessions of tab i of front window\n' +
-    '      if name of s starts with "[WorkspaceSync]" then\n' +
-    '        set foundName to name of s\n' +
-    '        exit repeat\n' +
-    '      end if\n' +
-    '      if foundName is "" then\n' +
+    '  set windowCount to count of windows\n' +
+    '  repeat with w from 1 to windowCount\n' +
+    '    set tabCount to count of tabs of window w\n' +
+    '    repeat with i from 1 to tabCount\n' +
+    '      set foundName to ""\n' +
+    '      set sessionCount to count of sessions of tab i of window w\n' +
+    '      repeat with j from 1 to sessionCount\n' +
     '        try\n' +
-    '          tell s\n' +
-    '            variable "user.workspaceProjectPath"\n' +
+    '          tell session j of tab i of window w\n' +
+    '            set foundPath to variable named "user.workspaceProjectPath"\n' +
     '          end tell\n' +
-    '          set foundName to name of s\n' +
+    '          set oldDelimiters to AppleScript\'s text item delimiters\n' +
+    '          set AppleScript\'s text item delimiters to "/"\n' +
+    '          set dirName to last text item of foundPath\n' +
+    '          set AppleScript\'s text item delimiters to oldDelimiters\n' +
+    '          set foundName to "[WorkspaceSync] " & dirName\n' +
     '          exit repeat\n' +
     '        on error\n' +
     '        end try\n' +
+    '        try\n' +
+    '          set sName to name of session j of tab i of window w\n' +
+    '          if sName starts with "[WorkspaceSync]" then\n' +
+    '            set foundName to sName\n' +
+    '            exit repeat\n' +
+    '          end if\n' +
+    '        on error\n' +
+    '        end try\n' +
+    '      end repeat\n' +
+    '      if foundName is "" then\n' +
+    '        try\n' +
+    '          set foundName to name of item 1 of sessions of tab i of window w\n' +
+    '        on error\n' +
+    '          set foundName to "Unknown"\n' +
+    '        end try\n' +
     '      end if\n' +
+    '      set output to output & w & ":" & i & "\\t" & foundName & "\\n"\n' +
     '    end repeat\n' +
-    '    set output to output & i & "\\t" & foundName & "\\n"\n' +
     '  end repeat\n' +
     '  return output\n' +
     'end tell'
@@ -134,12 +180,82 @@ export async function getTabInfo(): Promise<readonly { readonly id: number; read
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      const [idStr, ...titleParts] = line.split('\t')
+      const [windowAndTab, ...titleParts] = line.split('\t')
+      const colonIdx = windowAndTab.indexOf(':')
+      const windowIndex = parseInt(windowAndTab.substring(0, colonIdx), 10)
+      const id = parseInt(windowAndTab.substring(colonIdx + 1), 10)
       return {
-        id: parseInt(idStr, 10),
+        id,
         title: titleParts.join('\t'),
+        windowIndex,
       }
     })
+}
+
+/**
+ * Find a session by project path across all windows.
+ * Searches every window/tab/session for the `user.workspaceProjectPath` variable.
+ * Returns `{ windowIndex, tabIndex }` or null if not found.
+ */
+export async function findSessionByProject(
+  projectPath: string,
+): Promise<{ readonly windowIndex: number; readonly tabIndex: number } | null> {
+  const escapedPath = projectPath
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+
+  const raw = await runAppleScript(
+    `tell application "iTerm"\n` +
+    `  set resultStr to ""\n` +
+    `  repeat with w from 1 to count of windows\n` +
+    `    set tabCount to count of tabs of window w\n` +
+    `    repeat with i from 1 to tabCount\n` +
+    `      set sessionCount to count of sessions of tab i of window w\n` +
+    `      repeat with j from 1 to sessionCount\n` +
+    `        set foundPath to ""\n` +
+    `        try\n` +
+    `          tell session j of tab i of window w\n` +
+    `            set foundPath to variable named "user.workspaceProjectPath"\n` +
+    `          end tell\n` +
+    `          if foundPath is "${escapedPath}" then\n` +
+    `            set resultStr to (w as text) & ":" & (i as text)\n` +
+    `            exit repeat\n` +
+    `          end if\n` +
+    `        on error\n` +
+    `        end try\n` +
+    `      end repeat\n` +
+    `      if resultStr is not "" then exit repeat\n` +
+    `    end repeat\n` +
+    `    if resultStr is not "" then exit repeat\n` +
+    `  end repeat\n` +
+    `  return resultStr\n` +
+    `end tell`
+  )
+
+  const trimmed = raw.trim()
+  if (!trimmed || !trimmed.includes(':')) {
+    console.error(
+      '[ide-tui-bridge] findSessionByProject: no match found.',
+      '\n  projectPath:', projectPath,
+      '\n  AppleScript returned:', JSON.stringify(trimmed),
+    )
+    return null
+  }
+
+  const colonIdx = trimmed.indexOf(':')
+  const windowIndex = parseInt(trimmed.substring(0, colonIdx), 10)
+  const tabIndex = parseInt(trimmed.substring(colonIdx + 1), 10)
+
+  if (Number.isNaN(windowIndex) || Number.isNaN(tabIndex)) {
+    console.error(
+      '[ide-tui-bridge] findSessionByProject: unexpected AppleScript output.',
+      '\n  projectPath:', projectPath,
+      '\n  AppleScript returned:', JSON.stringify(trimmed),
+    )
+    return null
+  }
+
+  return { windowIndex, tabIndex }
 }
 
 /**
@@ -170,32 +286,38 @@ export async function setSessionVar(
 }
 
 /**
- * Get project paths stored as user variables for each tab.
+ * Get project paths stored as user variables for each tab across all windows.
  *
- * Returns an array of { id, projectPath } where id is the 1-based tab index.
- * Tabs without the variable are omitted from the result.
+ * Returns an array of { id, projectPath, windowIndex } where id is the
+ * 1-based tab index. Tabs without the variable are omitted from the result.
+ *
+ * Output format: `windowIndex:tabIndex\tprojectPath\n`
  */
 export async function getTabProjectPaths(): Promise<
-  readonly { readonly id: number; readonly projectPath: string }[]
+  readonly { readonly id: number; readonly projectPath: string; readonly windowIndex: number }[]
 > {
   const raw = await runAppleScript(
     'tell application "iTerm"\n' +
     '  set output to ""\n' +
-    '  set tabCount to count of tabs of front window\n' +
-    '  repeat with i from 1 to tabCount\n' +
-    '    set foundPath to ""\n' +
-    '    repeat with s in sessions of tab i of front window\n' +
-    '      try\n' +
-    '        tell s\n' +
-    '          set foundPath to variable "user.workspaceProjectPath"\n' +
-    '        end tell\n' +
-    '        exit repeat\n' +
-    '      on error\n' +
-    '      end try\n' +
+    '  set windowCount to count of windows\n' +
+    '  repeat with w from 1 to windowCount\n' +
+    '    set tabCount to count of tabs of window w\n' +
+    '    repeat with i from 1 to tabCount\n' +
+    '      set foundPath to ""\n' +
+    '      set sessionCount to count of sessions of tab i of window w\n' +
+    '      repeat with j from 1 to sessionCount\n' +
+    '        try\n' +
+    '          tell session j of tab i of window w\n' +
+    '            set foundPath to variable named "user.workspaceProjectPath"\n' +
+    '          end tell\n' +
+    '          exit repeat\n' +
+    '        on error\n' +
+    '        end try\n' +
+    '      end repeat\n' +
+    '      if foundPath is not "" then\n' +
+    '        set output to output & w & ":" & i & "\\t" & foundPath & "\\n"\n' +
+    '      end if\n' +
     '    end repeat\n' +
-    '    if foundPath is not "" then\n' +
-    '      set output to output & i & "\\t" & foundPath & "\\n"\n' +
-    '    end if\n' +
     '  end repeat\n' +
     '  return output\n' +
     'end tell'
@@ -206,10 +328,14 @@ export async function getTabProjectPaths(): Promise<
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      const [idStr, ...pathParts] = line.split('\t')
+      const [windowAndTab, ...pathParts] = line.split('\t')
+      const colonIdx = windowAndTab.indexOf(':')
+      const windowIndex = parseInt(windowAndTab.substring(0, colonIdx), 10)
+      const id = parseInt(windowAndTab.substring(colonIdx + 1), 10)
       return {
-        id: parseInt(idStr, 10),
+        id,
         projectPath: pathParts.join('\t'),
+        windowIndex,
       }
     })
 }
@@ -263,31 +389,36 @@ export async function setSessionName(name: string): Promise<string> {
 }
 
 /**
- * Get working directories for each tab in the front window.
- * Returns an array of { id, cwd } where id is the 1-based tab index
+ * Get working directories for each tab across all windows.
+ * Returns an array of { id, cwd, windowIndex } where id is the 1-based tab index
  * and cwd is the current directory of the first session in that tab.
  *
  * iTerm2 sessions have no "current directory" AppleScript property.
  * Strategy: get each session's tty device path, then use lsof to find
  * the shell process PID and its working directory.
+ *
+ * Output format: `windowIndex:tabIndex\ttty\n`
  */
 export async function getTabWorkingDirectories(): Promise<
-  readonly { readonly id: number; readonly cwd: string }[]
+  readonly { readonly id: number; readonly cwd: string; readonly windowIndex: number }[]
 > {
   // Step 1: Collect tty device paths for each tab's first session
   const ttyRaw = await runAppleScript(
     'tell application "iTerm"\n' +
     '  set output to ""\n' +
-    '  set tabCount to count of tabs of front window\n' +
-    '  repeat with i from 1 to tabCount\n' +
-    '    set firstSession to item 1 of sessions of tab i of front window\n' +
-    '    set theTty to ""\n' +
-    '    try\n' +
-    '      tell firstSession\n' +
-    '        set theTty to tty\n' +
-    '      end tell\n' +
-    '    end try\n' +
-    '    set output to output & i & "\\t" & theTty & "\\n"\n' +
+    '  set windowCount to count of windows\n' +
+    '  repeat with w from 1 to windowCount\n' +
+    '    set tabCount to count of tabs of window w\n' +
+    '    repeat with i from 1 to tabCount\n' +
+    '      set firstSession to item 1 of sessions of tab i of window w\n' +
+    '      set theTty to ""\n' +
+    '      try\n' +
+    '        tell firstSession\n' +
+    '          set theTty to tty\n' +
+    '        end tell\n' +
+    '      end try\n' +
+    '      set output to output & w & ":" & i & "\\t" & theTty & "\\n"\n' +
+    '    end repeat\n' +
     '  end repeat\n' +
     '  return output\n' +
     'end tell'
@@ -299,12 +430,14 @@ export async function getTabWorkingDirectories(): Promise<
     .split('\n')
     .filter((line) => line.trim().length > 0)
 
-  const results: { readonly id: number; readonly cwd: string }[] = []
+  const results: { readonly id: number; readonly cwd: string; readonly windowIndex: number }[] = []
 
   for (const entry of ttyEntries) {
-    const [idStr, ...ttyParts] = entry.split('\t')
+    const [windowAndTab, ...ttyParts] = entry.split('\t')
     const tty = ttyParts.join('\t').trim()
-    const id = parseInt(idStr, 10)
+    const colonIdx = windowAndTab.indexOf(':')
+    const windowIndex = parseInt(windowAndTab.substring(0, colonIdx), 10)
+    const id = parseInt(windowAndTab.substring(colonIdx + 1), 10)
 
     if (!tty || tty === '/dev/null') continue
 
@@ -319,7 +452,7 @@ export async function getTabWorkingDirectories(): Promise<
       )
       const cwd = stdout.trim()
       if (cwd) {
-        results.push({ id, cwd })
+        results.push({ id, cwd, windowIndex })
       }
     } catch {
       // Silently skip tabs where lsof fails (e.g. session not yet initialized)
@@ -327,4 +460,45 @@ export async function getTabWorkingDirectories(): Promise<
   }
 
   return results
+}
+
+/**
+ * Diagnostic: list all sessions with their user variables and names.
+ * Returns a human-readable string for debugging tab reuse issues.
+ */
+export async function diagnoseSessionVariables(): Promise<string> {
+  const raw = await runAppleScript(
+    'tell application "iTerm"\n' +
+    '  set output to ""\n' +
+    '  set windowCount to count of windows\n' +
+    '  set output to output & "Windows: " & windowCount & "\\n"\n' +
+    '  repeat with w from 1 to windowCount\n' +
+    '    set tabCount to count of tabs of window w\n' +
+    '    set output to output & "  Window " & w & ": " & tabCount & " tabs\\n"\n' +
+    '    repeat with i from 1 to tabCount\n' +
+    '      set sessionCount to count of sessions of tab i of window w\n' +
+    '      repeat with j from 1 to sessionCount\n' +
+    '        set varValue to "[not set]"\n' +
+    '        set sName to "[error]"\n' +
+    '        try\n' +
+    '          tell session j of tab i of window w\n' +
+    '            set varValue to variable named "user.workspaceProjectPath"\n' +
+    '          end tell\n' +
+    '        on error errMsg\n' +
+    '          set varValue to "[error: " & errMsg & "]"\n' +
+    '        end try\n' +
+    '        try\n' +
+    '          set sName to name of session j of tab i of window w\n' +
+    '        on error\n' +
+    '          set sName to "[error]"\n' +
+    '        end try\n' +
+    '        set output to output & "    W" & w & "T" & i & "S" & j & ": var=" & varValue & " name=" & sName & "\\n"\n' +
+    '      end repeat\n' +
+    '    end repeat\n' +
+    '  end repeat\n' +
+    '  return output\n' +
+    'end tell'
+  )
+
+  return raw
 }
