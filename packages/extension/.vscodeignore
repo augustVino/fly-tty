@@ -1,0 +1,15 @@
+.vscode/**
+.vscode-test/**
+src/**
+scripts/**
+coverage/**
+**/*.ts
+**/*.map
+**/*.d.ts.map
+!dist/**/*.d.ts
+.gitignore
+tsconfig.json
+tsconfig.tsbuildinfo
+esbuild.js
+package-lock.json
+npm-shrinkwrap.json
