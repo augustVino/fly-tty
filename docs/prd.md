@@ -59,7 +59,7 @@
 
 2. Core Engine (调度引擎)：
 
-   - 读取用户/项目的 .contextsync.yml 配置文件（解析面板命令、布局需求）。
+   - 从 VS Code/Cursor 全局设置 `ideTuiBridge.layout` 读取布局配置（解析面板命令、布局需求）。
 
    - 编排窗口管理、分屏、发送命令的业务逻辑串联。
 
@@ -73,24 +73,30 @@
 
    - 当前实现：GhosttyAdapter（调用 v1.3.0+ 的 AppleScript 接口进行 tab 遍历和分屏）。未来可横向拓展支持 iTerm2Adapter, WezTermAdapter。
 
-## 3.2 配置文件示例 (YAML)
+## 3.2 配置示例 (VS Code Settings)
 
-设计一种易读的配置文件格式，允许开发者在项目根目录自定义终端行为：
+布局配置通过 VS Code/Cursor 全局设置 `ideTuiBridge.layout` 定义，支持灵活的树形布局和每面板多命令：
 
-```yaml
-# .contextsync.yml
-version: 1.0
-terminal: ghostty # 指定使用的终端设配器
-
-layout:
-  type: three-pane-top-heavy # 顶部全宽，底部对分
-
-panes:
-  - id: pane_top
-    auto_focus: true
-    command: 'claude' # 启动 CC
-  - id: pane_bottom_left
-    command: 'npm run dev' # 启动开发服务器
-  - id: pane_bottom_right
-    command: '' # 留空，仅 cd 到目录
+```json
+{
+  "ideTuiBridge.layout": {
+    "direction": "horizontal",
+    "panes": [
+      {
+        "id": "pane_top",
+        "auto_focus": true,
+        "commands": ["claude"]
+      },
+      {
+        "direction": "vertical",
+        "panes": [
+          { "id": "pane_bottom_left", "commands": ["npm run dev"] },
+          { "id": "pane_bottom_right", "commands": [] }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+> 每个面板的 `commands` 数组中的命令按顺序依次执行，间隔 500ms。

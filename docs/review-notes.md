@@ -223,30 +223,30 @@ await withRetry(
 2. 添加 `windowSelector` 配置项
 3. 考虑多窗口场景下的 Tab 查找逻辑
 
-```yaml
-# .contextsync.yml
-version: 1.0
-terminal: ghostty
-
-window:
-  strategy: create-or-focus-frontmost  # frontmost | named | create-new
-  name: "Dev Terminal"  # 如果 strategy=named
-  screen: 1  # 目标屏幕（多屏场景）
+```json
+// VS Code/Cursor settings.json
+{
+  "ideTuiBridge.window": {
+    "strategy": "create-or-focus-frontmost",
+    "name": "Dev Terminal",
+    "screen": 1
+  }
+}
 ```
 
 ---
 
-### H5. 配置文件语法错误的处理
+### H5. 配置语法错误的处理
 
 **问题描述：**
 实施计划提到 Zod 校验，但未考虑：
-1. YAML 语法错误（缩进问题、无效字符）
-2. 配置文件缺失时的默认行为
-3. 配置文件格式变更的向后兼容性
+1. VS Code settings 中 layout JSON 格式错误
+2. 配置未设置时的默认行为
+3. 配置格式变更的向后兼容性
 
 **建议解决方案：**
-1. 添加详细的错误报告（具体到行号和错误类型）
-2. 提供配置文件验证命令
+1. 添加详细的错误报告
+2. 提供配置验证功能
 3. 维护配置版本和迁移逻辑
 
 ```typescript
@@ -491,12 +491,12 @@ function mapToUserError(error: Error): UserFriendlyError {
 
 **问题描述：**
 首次使用时用户需要：
-1. 配置 `.contextsync.yml` 文件
+1. 在 VS Code/Cursor settings 中配置 `ideTuiBridge.layout`
 2. 理解配置格式
 3. 授予系统权限
 
 **建议解决方案：**
-1. 提供配置文件生成向导
+1. 在扩展设置中提供配置示例和说明
 2. 内置常用配置模板
 3. 添加"快速开始"文档链接
 

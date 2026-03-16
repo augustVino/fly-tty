@@ -1,6 +1,6 @@
 {
   "name": "ide-tui-bridge",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "IDE-TUI Bridge: Sync workspace layout between IDE and terminal",
   "private": true,
   "workspaces": [

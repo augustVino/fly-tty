@@ -30,4 +30,4 @@ cd packages/extension && npm run package  # 生成 .vsix
 ## 详细指南
 
 - [架构设计](.claude/architecture.md) - Monorepo 结构、核心管道、设计模式
-- [配置格式](.claude/config-format.md) - `.contextsync.yml` 布局配置
+- [配置格式](.claude/config-format.md) - VS Code/Cursor settings 布局配置

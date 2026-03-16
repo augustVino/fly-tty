@@ -41,17 +41,17 @@ cd packages/extension && npm run package
 
 #### Monorepo Layout
 
-- **`packages/engine`** (`@ide-tui-bridge/engine`) — Core library. Loads `.contextsync.yml` config, orchestrates terminal control. No UI dependency.
-- **`packages/extension`** — VS Code/Cursor extension. Registers the `ideTuiBridge.openProject` command, calls into the engine.
+- **`packages/engine`** (`@ide-tui-bridge/engine`) — Core library. Validates layout config via Zod schema, orchestrates terminal control. No UI dependency.
+- **`packages/extension`** — VS Code/Cursor extension. Registers the `ideTuiBridge.openProject` command, reads layout from VS Code settings, calls into the engine.
 - **`tests/`** — Root-level Vitest test directory. Aliased so tests import `@ide-tui-bridge/engine` directly from source.
 
 #### Core Engine Pipeline
 
-`sync-engine.ts` runs the full pipeline: `loadConfig` → `createAdapter` → `ensureWindow` → `resolveTab` → `buildLayout` → `injectCommands`.
+`sync-engine.ts` runs the full pipeline: `resolveConfig` → `createAdapter` → `ensureWindow` → `resolveTab` → `buildLayout` → `injectCommands`.
 
 Key modules:
-- **`config/`** — Zod schema validates the recursive layout tree from YAML. Loader returns a `Result<T, E>` monad for functional error handling with fallback to defaults.
-- **`core/`** — `window-manager` (launch/activate terminal), `tab-manager` (idempotent find-or-create by title prefix), `layout-builder` (DFS traversal of layout tree → ordered split sequence), `command-injector` (cd + command per leaf pane).
+- **`config/`** — Zod schema validates the recursive layout tree. Provides default config for when no layout is configured.
+- **`core/`** — `window-manager` (launch/activate terminal), `tab-manager` (idempotent find-or-create by title prefix), `layout-builder` (DFS traversal of layout tree → ordered split sequence), `command-injector` (sequential execution of commands array with 500ms delay between each).
 - **`adapters/terminal/`** — `TerminalAdapter` interface with `GhosttyAdapter` implementation via AppleScript (`execa`). Factory `createTerminalAdapter(config)` selects by terminal type.
 - **`adapters/ide/`** — `IdeAdapter` interface with `CursorAdapter` for IDE-specific context.
 
@@ -59,30 +59,33 @@ Key modules:
 
 - **Adapter pattern** — Terminal and IDE operations behind interfaces for extensibility (Ghostty today, iTerm2/WezTerm later).
 - **Tree-based layouts** — `LayoutNode = PaneLeaf | LayoutContainer` recursive type. `buildSplitSequence` does DFS to produce ordered actions. `collectLeaves` gathers all terminal panes.
-- **Result monad** — `ok<T>()` / `err<E>()` with `isSuccess`/`isFailure` guards. Used by config loader; engine falls back to defaults on failure.
+- **Result monad** — `ok<T>()` / `err<E>()` with `isSuccess`/`isFailure` guards. Used by sync engine for error reporting.
 - **Idempotent tab management** — Tabs matched by title `[WorkspaceSync] <dirname>`. Existing tabs are reused (no process destruction).
-- **Immutability** — All returned arrays are `Object.freeze`d. No input mutation.
+- **Sequential command injection** — Each pane supports a `commands` array. Commands execute in order with 500ms delay between each (Ghostty AppleScript cannot detect command completion).
 
 #### Configuration
 
-Projects create `.contextsync.yml` in their root:
+Layout is configured in VS Code/Cursor global settings (`settings.json`):
 
-```yaml
-version: "1.0"
-terminal: ghostty
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top
-      auto_focus: true
-      command: 'command'
-    - direction: vertical
-      panes:
-        - id: pane_bottom_left
-          command: 'npm run dev'
-        - id: pane_bottom_right
-          command: ''
+```json
+{
+  "ideTuiBridge.layout": {
+    "direction": "horizontal",
+    "panes": [
+      { "id": "pane_top", "auto_focus": true, "commands": ["claude"] },
+      {
+        "direction": "vertical",
+        "panes": [
+          { "id": "pane_bottom_left", "commands": ["npm run dev"] },
+          { "id": "pane_bottom_right", "commands": [] }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+If no layout is configured, a single-pane default is used.
 
 #### TypeScript Setup
 

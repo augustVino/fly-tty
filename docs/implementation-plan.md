@@ -8,7 +8,7 @@
 
 - **Core Engine**: TypeScript + Node.js
 - **Trigger**: Cursor Extension (VS Code Extension API)
-- **Config**: YAML (.contextsync.yml) + Zod 校验
+- **Config**: VS Code/Cursor settings (`ideTuiBridge.layout`) + Zod 校验
 - **Terminal Control**: Ghostty AppleScript API (macOS)
 - **Build**: esbuild (extension), tsc (engine)
 - **Test**: Vitest
@@ -41,7 +41,6 @@ ide-tui-bridge/
 │   │       ├── config/
 │   │       │   ├── index.ts
 │   │       │   ├── schema.ts       # Zod schemas
-│   │       │   ├── loader.ts
 │   │       │   └── defaults.ts
 │   │       ├── core/
 │   │       │   ├── index.ts
@@ -85,7 +84,6 @@ ide-tui-bridge/
 
 | 包 | 用途 | 位置 |
 |----|------|------|
-| `yaml` | YAML 解析 | engine |
 | `zod` | 配置校验 | engine |
 | `execa` | 子进程管理 | engine |
 | `vitest` | 测试框架 | root (dev) |
@@ -100,66 +98,67 @@ ide-tui-bridge/
 
 用嵌套的树结构描述分屏关系，`direction` 决定分割方向，叶子节点是实际 pane，中间节点是容器。
 
-### 配置文件示例
+### 配置示例
 
-```yaml
-# .contextsync.yml — 三面板（上 1 + 下 2）
-version: 1.0
-terminal: ghostty
-
-layout:
-  direction: horizontal          # 第一刀：上下分
-  panes:
-    - id: pane_top               # 叶子节点 = 实际面板
-      auto_focus: true
-      command: 'command'         # 启动 AI 编程助手
-    - direction: vertical        # 第二刀：左右分（嵌套）
-      panes:
-        - id: pane_bottom_left
-          command: 'npm run dev'
-        - id: pane_bottom_right
-          command: ''
+```json
+// VS Code/Cursor settings.json — 三面板（上 1 + 下 2）
+{
+  "ideTuiBridge.layout": {
+    "direction": "horizontal",
+    "panes": [
+      {
+        "id": "pane_top",
+        "auto_focus": true,
+        "commands": ["command"]
+      },
+      {
+        "direction": "vertical",
+        "panes": [
+          { "id": "pane_bottom_left", "commands": ["npm run dev"] },
+          { "id": "pane_bottom_right", "commands": [] }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-```yaml
-# .contextsync.yml — 双面板（左右分）
-version: 1.0
-terminal: ghostty
-
-layout:
-  direction: vertical
-  panes:
-    - id: pane_left
-      auto_focus: true
-      command: 'npm run dev'
-    - id: pane_right
-      command: ''
+```json
+// VS Code/Cursor settings.json — 双面板（左右分）
+{
+  "ideTuiBridge.layout": {
+    "direction": "vertical",
+    "panes": [
+      { "id": "pane_left", "auto_focus": true, "commands": ["npm run dev"] },
+      { "id": "pane_right", "commands": [] }
+    ]
+  }
+}
 ```
 
-```yaml
-# .contextsync.yml — 双面板（上下分）
-version: 1.0
-terminal: ghostty
-
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top
-      command: 'command'
-    - id: pane_bottom
-      command: 'npm run dev'
+```json
+// VS Code/Cursor settings.json — 双面板（上下分）
+{
+  "ideTuiBridge.layout": {
+    "direction": "horizontal",
+    "panes": [
+      { "id": "pane_top", "commands": ["command"] },
+      { "id": "pane_bottom", "commands": ["npm run dev"] }
+    ]
+  }
+}
 ```
 
-```yaml
-# .contextsync.yml — 单面板
-version: 1.0
-terminal: ghostty
-
-layout:
-  direction: none
-  panes:
-    - id: main
-      command: 'npm run dev'
+```json
+// VS Code/Cursor settings.json — 单面板
+{
+  "ideTuiBridge.layout": {
+    "direction": "none",
+    "panes": [
+      { "id": "main", "commands": ["npm run dev"] }
+    ]
+  }
+}
 ```
 
 ### 类型定义 (`packages/engine/src/types/layout.ts`)
@@ -172,7 +171,7 @@ export type SplitDirection = 'horizontal' | 'vertical' | 'none'
 export interface PaneLeaf {
   id: string
   auto_focus?: boolean
-  command?: string
+  commands?: string[]
   cwd?: string
 }
 
@@ -201,7 +200,7 @@ export function isLayoutContainer(node: LayoutNode): node is LayoutContainer {
 const PaneLeafSchema = z.object({
   id: z.string(),
   auto_focus: z.boolean().default(false),
-  command: z.string().default(''),
+  commands: z.array(z.string()).default([]),
   cwd: z.string().optional(),
 })
 
@@ -296,7 +295,7 @@ function buildSplitSequence(node: LayoutNode, actions: SplitAction[] = []): Spli
 
 ### command-injector.ts — 按树序注入命令
 
-遍历布局树的所有叶子节点（pane），按 DFS 顺序依次 `navigateToPane` + `sendCommand`。
+遍历布局树的所有叶子节点（pane），按 DFS 顺序依次 `navigateToPane` + `sendCommand`。每个面板支持 `commands` 数组，按顺序执行，命令之间间隔 500ms。
 
 ---
 
@@ -360,16 +359,16 @@ export interface TerminalAdapter {
 ### sync-engine.ts 主流程
 
 ```
-sync(projectPath)
+sync({ projectPath, layout? })
   │
-  ├─ 1. loadConfig(projectPath)         // 加载 .contextsync.yml（无则默认单面板）
+  ├─ 1. resolveConfig(options)          // 使用 VS Code settings 中的 layout（无则默认单面板）
   ├─ 2. createTerminalAdapter(config)
   ├─ 3. windowManager.ensureWindow()    // 启动/激活 Ghostty
   ├─ 4. tabManager.resolveTab(path)     // 查找 → 复用 / 新建
   ├─ 5. IF 新建 Tab:
   │     └─ layoutBuilder.build(config.layout, config.panes)
   │        └─ 树形遍历 → 生成 Split 动作序列 → 顺序执行
-  └─ 6. commandInjector.inject(panes)   // DFS 遍历叶子节点 → cd + command
+  └─ 6. commandInjector.inject(panes)   // DFS 遍历叶子节点 → commands 数组顺序执行
 ```
 
 ---
@@ -385,7 +384,7 @@ sync(projectPath)
 ### 配置项
 
 - `ideTuiBridge.ghosttyPath`: 默认 `/Applications/Ghostty.app`
-- `ideTuiBridge.configFileName`: 默认 `.contextsync.yml`
+- `ideTuiBridge.layout`: 终端布局配置（JSON object）
 
 ---
 
@@ -393,7 +392,7 @@ sync(projectPath)
 
 | 测试文件 | 覆盖范围 |
 |----------|----------|
-| `config.test.ts` | Zod 校验、YAML 加载、默认值 |
+| `config.test.ts` | Zod 校验、默认值、多命令支持 |
 | `layout-builder.test.ts` | **重点**: 树形布局 → 分屏动作序列、各种布局变体 |
 | `sync-engine.test.ts` | 主流程编排（mock adapter） |
 | `ghostty-adapter.test.ts` | AppleScript 调用序列 mock |
@@ -424,14 +423,14 @@ code --install-extension *.vsix
 | 步骤 | 内容 | 文件数 |
 |------|------|--------|
 | 1 | 脚手架: package.json, tsconfig, .gitignore | 5 |
-| 2 | 类型定义: types/ (adapter, config, result, layout) | 5 |
-| 3 | 配置模块: config/ (schema, loader, defaults) | 4 |
+| 2 | 类型定义: types/ (adapter, config, result, layout) | 4 |
+| 3 | 配置模块: config/ (schema, defaults) | 3 |
 | 4 | Ghostty AppleScript 封装 | 2 |
 | 5 | GhosttyAdapter 实现 | 2 |
 | 6 | Core Engine (sync-engine, layout-builder, managers) | 6 |
 | 7 | Cursor Extension | 4 |
-| 8 | 单元测试 | 5 |
-| **Total** | | **~33 files** |
+| 8 | 单元测试 | 4 |
+| **Total** | | **~29 files** |
 
 ---
 
