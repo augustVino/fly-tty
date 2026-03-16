@@ -25,7 +25,7 @@ export interface TerminalAdapter {
   readonly name: string
 
   /** Ensure the terminal application is running */
-  ensureRunning(): Promise<void>
+  ensureRunning(options?: { readonly terminalPath?: string }): Promise<void>
 
   /** Activate the terminal window */
   activateWindow(): Promise<void>

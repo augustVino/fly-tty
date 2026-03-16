@@ -208,3 +208,60 @@ export async function gotoPreviousSplit(): Promise<string> {
     'tell application "Ghostty" to perform action "goto_split:previous" on focused terminal of selected tab of front window'
   )
 }
+
+/** Information about a single terminal within a tab */
+export interface TerminalInfo {
+  readonly tabIndex: number
+  readonly terminalId: string
+  readonly title: string
+  readonly workingDirectory: string
+}
+
+/**
+ * Get terminal info (title + working directory) for all terminals in the
+ * front window's tabs. A single AppleScript call collects the data.
+ *
+ * The result is grouped by tab; within each tab, terminals appear in
+ * creation order. Titles and working directories come directly from
+ * Ghostty's AppleScript dictionary (`name` and `working directory`).
+ *
+ * Falls back to `"unknown"` for working directory if Ghostty returns
+ * `missing value`.
+ */
+export async function getTerminalInfoInFrontWindow(): Promise<TerminalInfo[]> {
+  const raw = await runAppleScript(
+    [
+      'tell application "Ghostty"',
+      '  set output to ""',
+      '  repeat with t from 1 to count of tabs of front window',
+      '    set tabRef to tab t of front window',
+      '    repeat with i from 1 to count of terminals of tabRef',
+      '      set termRef to terminal i of tabRef',
+      '      set tid to id of termRef',
+      '      set tname to name of termRef',
+      '      try',
+      '        set wd to working directory of termRef',
+      '      on error',
+      '        set wd to "unknown"',
+      '      end try',
+      '      set output to output & (t as text) & "\\t" & tid & "\\t" & tname & "\\t" & wd & "\\n"',
+      '    end repeat',
+      '  end repeat',
+      '  return output',
+      'end tell',
+    ].join('\n'),
+  )
+
+  return raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [tabIndex, terminalId, title, workingDirectory] = line.split('\t')
+      return {
+        tabIndex: parseInt(tabIndex ?? '0', 10),
+        terminalId: terminalId ?? '',
+        title: title ?? '',
+        workingDirectory: workingDirectory ?? 'unknown',
+      }
+    })
+}

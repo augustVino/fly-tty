@@ -95,10 +95,11 @@ export class GhosttyAdapter implements TerminalAdapter {
     return 'ghostty'
   }
 
-  async ensureRunning(): Promise<void> {
+  async ensureRunning(options?: { readonly terminalPath?: string }): Promise<void> {
+    const appName = options?.terminalPath ?? 'Ghostty'
     const running = await isGhosttyRunning()
     if (!running) {
-      await execa('open', ['-a', 'Ghostty'])
+      await execa('open', ['-a', appName])
       await waitForWindow()
     }
   }
@@ -119,7 +120,38 @@ export class GhosttyAdapter implements TerminalAdapter {
   async findTabByProject(projectPath: string): Promise<TerminalTab | null> {
     const tabs = await this.listTabs()
     const expectedTitle = buildTabTitle(projectPath)
-    return tabs.find((tab) => tab.title === expectedTitle) ?? null
+
+    // Fast path 1: exact title match
+    const titleMatch = tabs.find((tab) => tab.title === expectedTitle)
+    if (titleMatch) return titleMatch
+
+    // Fast path 2: match by project directory name in tab title
+    // (shell prompt may overwrite our prefix, but dirname often remains)
+    const dirName = extractDirName(projectPath)
+    const dirMatches = tabs.filter((tab) => tab.title.includes(dirName))
+    if (dirMatches.length === 1) return dirMatches[0]
+
+    // Slow path: terminal-level search (single AppleScript call for all info)
+    const allTerminalInfo = await ghosttyScript.getTerminalInfoInFrontWindow()
+
+    // Fallback 3: exact terminal title match against expected title
+    const terminalTitleMatch = allTerminalInfo.find(
+      (info) => info.title === expectedTitle,
+    )
+    if (terminalTitleMatch) {
+      return tabs.find((tab) => tab.id === String(terminalTitleMatch.tabIndex)) ?? null
+    }
+
+    // Fallback 4: working directory match (only when unique)
+    const normalizedProjectPath = projectPath.replace(/\/+$/, '')
+    const wdMatches = allTerminalInfo.filter(
+      (info) => info.workingDirectory.replace(/\/+$/, '') === normalizedProjectPath,
+    )
+    if (wdMatches.length === 1) {
+      return tabs.find((tab) => tab.id === String(wdMatches[0].tabIndex)) ?? null
+    }
+
+    return null
   }
 
   async createTab(options?: CreateTabOptions): Promise<TerminalTab> {
@@ -139,14 +171,14 @@ export class GhosttyAdapter implements TerminalAdapter {
       throw new Error('Failed to create tab: no tabs found after creation')
     }
 
+    // Set the tab name via OSC 0 (window + icon title).
+    // OSC 1 only sets the icon name, which `name of tab` does not return.
+    // OSC 0 ensures the title is visible to `getTabTitles` for reuse.
     if (title) {
-      return {
-        ...lastTab,
-        title,
-      }
+      await this.sendCommand(`printf '\\033]0;${title}\\007'`)
     }
 
-    return { ...lastTab }
+    return { ...lastTab, title: title ?? lastTab.title }
   }
 
   async focusTab(tab: TerminalTab): Promise<void> {

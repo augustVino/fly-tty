@@ -41,7 +41,7 @@ const LayoutNodeSchema: z.ZodType<LayoutNode> = z.lazy(() =>
 export const ProjectConfigSchema = z
   .object({
     version: z.string().default('1.0'),
-    terminal: z.enum(['ghostty']).default('ghostty'),
+    terminal: z.enum(['ghostty', 'iterm2']).default('ghostty'),
     layout: LayoutNodeSchema,
   })
   .transform((val) => val as ProjectConfig)

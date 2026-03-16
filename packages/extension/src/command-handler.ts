@@ -10,7 +10,7 @@
 
 import * as vscode from 'vscode'
 import { sync } from '@ide-tui-bridge/engine'
-import type { SyncOptions, SyncResult, LayoutNode } from '@ide-tui-bridge/engine'
+import type { SyncOptions, SyncResult, LayoutNode, TerminalType } from '@ide-tui-bridge/engine'
 
 const OUTPUT_CHANNEL_NAME = 'IDE-TUI Bridge'
 
@@ -39,15 +39,17 @@ export function getWorkspaceRootPath(): string | null {
  * Read extension configuration values.
  */
 export function getExtensionConfig(): {
-  readonly ghosttyPath: string
+  readonly terminalPath: string
+  readonly terminal: TerminalType
   readonly layout?: LayoutNode
 } {
   const configuration = vscode.workspace.getConfiguration('ideTuiBridge')
 
-  const ghosttyPath = configuration.get<string>('ghosttyPath', '/Applications/Ghostty.app')
+  const terminalPath = configuration.get<string>('terminalPath', '')
+  const terminal = configuration.get<TerminalType>('terminal', 'ghostty')
   const layout = configuration.get<LayoutNode>('layout')
 
-  return Object.freeze({ ghosttyPath, layout })
+  return Object.freeze({ terminalPath, terminal, layout })
 }
 
 /**
@@ -104,6 +106,8 @@ export async function handleOpenProject(
   const syncOptions: SyncOptions = {
     projectPath,
     layout: extensionConfig.layout,
+    terminal: extensionConfig.terminal,
+    terminalPath: extensionConfig.terminalPath || undefined,
   }
 
   try {

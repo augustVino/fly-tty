@@ -9,7 +9,7 @@ import type { TerminalAdapter } from '../types/adapter.js'
  *
  * This is a prerequisite before any tab or pane operations can succeed.
  */
-export async function ensureWindow(adapter: TerminalAdapter): Promise<void> {
-  await adapter.ensureRunning()
+export async function ensureWindow(adapter: TerminalAdapter, terminalPath?: string): Promise<void> {
+  await adapter.ensureRunning({ terminalPath })
   await adapter.activateWindow()
 }

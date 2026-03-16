@@ -3,14 +3,15 @@
  *
  * Coordinates the full lifecycle of a workspace sync operation:
  *   createTerminalAdapter -> ensureWindow ->
- *   resolveTab -> (if new tab: buildLayout) -> injectCommands
+ *   resolveTab -> (if new tab: buildLayout + injectCommands)
  */
 
 import { defaultConfig } from '../config/defaults.js'
 import { ok, type Result } from '../types/result.js'
-import type { ProjectConfig, TerminalAdapter, LayoutNode } from '../types/index.js'
+import type { ProjectConfig, TerminalAdapter, TerminalType, LayoutNode } from '../types/index.js'
 import { ProjectConfigSchema } from '../config/schema.js'
 import { ghosttyAdapter } from '../adapters/terminal/ghostty-adapter.js'
+import { iterm2Adapter } from '../adapters/terminal/iterm2-adapter.js'
 import { ensureWindow } from './window-manager.js'
 import { resolveTab, type TabResolution } from './tab-manager.js'
 import { buildSplitSequence } from './layout-builder.js'
@@ -19,6 +20,8 @@ import { injectCommands } from './command-injector.js'
 export interface SyncOptions {
   readonly projectPath: string
   readonly layout?: LayoutNode
+  readonly terminal?: TerminalType
+  readonly terminalPath?: string
 }
 
 export interface SyncResult {
@@ -30,13 +33,14 @@ export interface SyncResult {
 /**
  * Create a terminal adapter based on the configured terminal type.
  *
- * Factory pattern -- currently only Ghostty is supported.
- * Future terminal types (iTerm2, WezTerm, etc.) can be added here.
+ * Factory pattern -- supports Ghostty and iTerm2.
  */
 export function createTerminalAdapter(config: ProjectConfig): TerminalAdapter {
   switch (config.terminal) {
     case 'ghostty':
       return ghosttyAdapter
+    case 'iterm2':
+      return iterm2Adapter
     default:
       throw new Error(`Unsupported terminal type: ${config.terminal as string}`)
   }
@@ -45,14 +49,14 @@ export function createTerminalAdapter(config: ProjectConfig): TerminalAdapter {
 /**
  * Resolve the effective configuration.
  *
- * If a layout is provided (from VS Code settings), validate it and merge
+ * If a layout or terminal is provided (from VS Code settings), validate and merge
  * with default config values. Otherwise, use the default config.
  */
 function resolveConfig(options: SyncOptions): ProjectConfig {
-  const { layout } = options
+  const { layout, terminal } = options
 
-  if (layout) {
-    const validated = ProjectConfigSchema.parse({ layout }) as ProjectConfig
+  if (layout || terminal) {
+    const validated = ProjectConfigSchema.parse({ layout, terminal }) as ProjectConfig
     return validated
   }
 
@@ -66,8 +70,7 @@ function resolveConfig(options: SyncOptions): ProjectConfig {
  * 2. Create the appropriate terminal adapter.
  * 3. Ensure the terminal window exists and is active.
  * 4. Resolve (or create) the project's tab.
- * 5. If the tab is new, build the layout by replaying split actions.
- * 6. Inject startup commands into all panes.
+ * 5. If the tab is new, build the layout and inject startup commands.
  */
 export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
   const config = resolveConfig(options)
@@ -77,7 +80,7 @@ export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
     const adapter = createTerminalAdapter(config)
 
     // Step 2: Ensure window is running and active
-    await ensureWindow(adapter)
+    await ensureWindow(adapter, options.terminalPath)
 
     // Step 3: Resolve or create project tab
     const tabResolution = await resolveTab(adapter, options.projectPath)
@@ -86,6 +89,7 @@ export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
     let splitCount = 0
 
     if (tabResolution.isNew) {
+      // Step 4a: Build layout by replaying split actions
       const splitActions = buildSplitSequence(config.layout)
       splitCount = splitActions.length
 
@@ -94,13 +98,21 @@ export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
           workingDirectory: action.workingDirectory ?? options.projectPath,
         })
       }
-    }
 
-    // Step 5: Inject commands into all panes
-    await injectCommands({
-      adapter,
-      layout: config.layout,
-    })
+      // Step 4b: Re-set the OSC 0 title on the first pane.
+      // After splits the focused pane may have changed; navigating to pane 1
+      // and re-sending the title improves the hit rate for tab reuse.
+      const dirName = options.projectPath.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
+      const oscTitle = `[WorkspaceSync] ${dirName}`
+      await adapter.navigateToPane(1)
+      await adapter.sendCommand(`printf '\\033]0;${oscTitle}\\007'`)
+
+      // Step 4c: Inject commands into all panes (only for new tabs)
+      await injectCommands({
+        adapter,
+        layout: config.layout,
+      })
+    }
 
     return ok({
       config,

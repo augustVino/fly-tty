@@ -1,6 +1,6 @@
 {
   "name": "ide-tui-bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "IDE-TUI Bridge Extension for Cursor/VS Code",
   "displayName": "IDE-TUI Bridge",
   "publisher": "vino",
@@ -15,6 +15,7 @@
   "keywords": [
     "terminal",
     "ghostty",
+    "iterm2",
     "split",
     "workspace",
     "automation",
@@ -51,10 +52,19 @@
     "configuration": {
       "title": "IDE-TUI Bridge",
       "properties": {
-        "ideTuiBridge.ghosttyPath": {
+        "ideTuiBridge.terminal": {
           "type": "string",
-          "default": "/Applications/Ghostty.app",
-          "description": "Path to Ghostty.app"
+          "enum": [
+            "ghostty",
+            "iterm2"
+          ],
+          "default": "ghostty",
+          "description": "Terminal application to use for workspace sync"
+        },
+        "ideTuiBridge.terminalPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the terminal application (e.g. /Applications/Ghostty.app). Leave empty to use the default."
         },
         "ideTuiBridge.layout": {
           "type": "object",

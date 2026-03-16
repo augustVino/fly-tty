@@ -128,7 +128,10 @@ ghosttyAdapterModule.ghosttyAdapter = mockAdapter;
         (0, vitest_1.expect)(mockAdapterMethods.splitPane).toHaveBeenCalledWith('right', {
             workingDirectory: '/tmp/test-project',
         });
-        // sendCommand only called for panes with non-empty commands
+        // After splits: re-set title on first pane
+        (0, vitest_1.expect)(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1);
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(vitest_1.expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"));
+        // sendCommand also called for panes with non-empty commands
         (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledWith('vim');
     });
 });
@@ -173,8 +176,9 @@ ghosttyAdapterModule.ghosttyAdapter = mockAdapter;
         }
         (0, vitest_1.expect)(mockAdapterMethods.ensureRunning).toHaveBeenCalled();
         (0, vitest_1.expect)(mockAdapterMethods.activateWindow).toHaveBeenCalled();
-        // Default config has a single pane with empty commands, so sendCommand is not called
-        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).not.toHaveBeenCalled();
+        // Title is re-set after splits (even with 0 splits, the new tab path triggers it)
+        (0, vitest_1.expect)(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1);
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(vitest_1.expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"));
     });
 });
 // ---------------------------------------------------------------------------
@@ -229,6 +233,9 @@ ghosttyAdapterModule.ghosttyAdapter = mockAdapter;
         (0, vitest_1.expect)(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(2, 'right', {
             workingDirectory: '/tmp/test-project',
         });
+        // Title re-set after splits
+        (0, vitest_1.expect)(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1);
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(vitest_1.expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"));
     });
 });
 // ---------------------------------------------------------------------------
@@ -248,10 +255,12 @@ ghosttyAdapterModule.ghosttyAdapter = mockAdapter;
             layout: multiCmdLayout,
         });
         (0, vitest_1.expect)(result.ok).toBe(true);
-        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledTimes(3);
-        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(1, 'cd /some/path');
-        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(2, 'npm install');
-        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(3, 'npm run dev');
+        // First sendCommand is the OSC 0 title re-set
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenCalledTimes(4);
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(1, vitest_1.expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"));
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(2, 'cd /some/path');
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(3, 'npm install');
+        (0, vitest_1.expect)(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(4, 'npm run dev');
     });
 });
 //# sourceMappingURL=sync-engine.test.js.map

@@ -64,6 +64,7 @@ vitest_1.vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.j
     focusTerminalById: vitest_1.vi.fn().mockResolvedValue(''),
     gotoNextSplit: vitest_1.vi.fn().mockResolvedValue(''),
     gotoPreviousSplit: vitest_1.vi.fn().mockResolvedValue(''),
+    getTerminalInfoInFrontWindow: vitest_1.vi.fn().mockResolvedValue([]),
 }));
 const execa_1 = require("execa");
 const ghostty_adapter_js_1 = require("@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js");
@@ -123,6 +124,25 @@ function createAdapter() {
             '-e',
             vitest_1.expect.stringContaining('count windows of process "Ghostty"'),
         ]));
+    });
+    (0, vitest_1.it)('should use custom terminalPath when provided', async () => {
+        // pgrep fails -> not running
+        mockExeca.mockRejectedValueOnce(new Error('not found'));
+        // open -a with custom path
+        mockExeca.mockResolvedValueOnce({
+            stdout: '',
+            stderr: '',
+            exitCode: 0,
+        });
+        // waitForWindow: 1 window
+        mockExeca.mockResolvedValueOnce({
+            stdout: '1',
+            stderr: '',
+            exitCode: 0,
+        });
+        const adapter = createAdapter();
+        await adapter.ensureRunning({ terminalPath: '/Applications/CustomGhostty.app' });
+        (0, vitest_1.expect)(mockExeca).toHaveBeenCalledWith('open', ['-a', '/Applications/CustomGhostty.app']);
     });
     (0, vitest_1.it)('should poll for window after starting Ghostty', async () => {
         // pgrep fails -> not running
@@ -245,6 +265,81 @@ function createAdapter() {
         (0, vitest_1.expect)(tab).not.toBeNull();
         (0, vitest_1.expect)(tab?.id).toBe('1');
     });
+    (0, vitest_1.it)('should fall back to dirname match when exact title is not found', async () => {
+        // Shell prompt overwrote our prefix, but dirname is still visible
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'bash — my-project',
+            'vim — other-project',
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('1');
+    });
+    (0, vitest_1.it)('should return null when multiple tabs match dirname fallback', async () => {
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'bash — my-project',
+            'vim — my-project',
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).toBeNull();
+    });
+    (0, vitest_1.it)('should fall back to terminal title match when tab title does not match', async () => {
+        // Tab title was overwritten by shell, but individual terminal still has our title
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'user@host:~',
+            'vim — other-project',
+        ]);
+        vitest_1.vi.mocked(ghosttyScript.getTerminalInfoInFrontWindow).mockResolvedValueOnce([
+            { tabIndex: 1, terminalId: 'uuid-1', title: 'user@host:~', workingDirectory: '/Users/dev/other-project' },
+            { tabIndex: 2, terminalId: 'uuid-2', title: '[WorkspaceSync] my-project', workingDirectory: '/Users/dev/my-project' },
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('2');
+        (0, vitest_1.expect)(ghosttyScript.getTerminalInfoInFrontWindow).toHaveBeenCalledOnce();
+    });
+    (0, vitest_1.it)('should fall back to working directory match when unique', async () => {
+        // Both tab title and terminal title are overwritten, but working directory is reliable
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'user@host:~',
+            'user@host:~/other-project',
+        ]);
+        vitest_1.vi.mocked(ghosttyScript.getTerminalInfoInFrontWindow).mockResolvedValueOnce([
+            { tabIndex: 1, terminalId: 'uuid-1', title: 'user@host:~', workingDirectory: '/Users/dev/other-project' },
+            { tabIndex: 2, terminalId: 'uuid-2', title: 'user@host:~/my-project', workingDirectory: '/Users/dev/my-project' },
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('2');
+    });
+    (0, vitest_1.it)('should return null when working directory matches multiple tabs', async () => {
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'user@host:~',
+            'user@host:~',
+        ]);
+        vitest_1.vi.mocked(ghosttyScript.getTerminalInfoInFrontWindow).mockResolvedValueOnce([
+            { tabIndex: 1, terminalId: 'uuid-1', title: 'user@host:~', workingDirectory: '/Users/dev/my-project' },
+            { tabIndex: 2, terminalId: 'uuid-2', title: 'user@host:~', workingDirectory: '/Users/dev/my-project' },
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).toBeNull();
+    });
+    (0, vitest_1.it)('should NOT trigger terminal-level fallback when fast path matches', async () => {
+        vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
+            'Default',
+            '[WorkspaceSync] my-project',
+        ]);
+        const adapter = createAdapter();
+        const tab = await adapter.findTabByProject('/Users/dev/my-project');
+        (0, vitest_1.expect)(tab).not.toBeNull();
+        (0, vitest_1.expect)(tab?.id).toBe('2');
+        (0, vitest_1.expect)(ghosttyScript.getTerminalInfoInFrontWindow).not.toHaveBeenCalled();
+    });
 });
 // ---------------------------------------------------------------------------
 // createTab
@@ -266,7 +361,7 @@ function createAdapter() {
         (0, vitest_1.expect)(ghosttyScript.newTab).toHaveBeenCalledOnce();
         (0, vitest_1.expect)(ghosttyScript.getTerminalIds).toHaveBeenCalledOnce();
     });
-    (0, vitest_1.it)('should create tab with custom title', async () => {
+    (0, vitest_1.it)('should create tab with custom title using OSC 0 escape sequence', async () => {
         vitest_1.vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('');
         vitest_1.vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1']);
         vitest_1.vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
@@ -277,6 +372,8 @@ function createAdapter() {
         const tab = await adapter.createTab({
             title: '[WorkspaceSync] my-project',
         });
+        // Verify OSC 0 (not OSC 1) is used for title setting
+        (0, vitest_1.expect)(ghosttyScript.inputText).toHaveBeenCalledWith(vitest_1.expect.stringContaining('\\033]0;[WorkspaceSync] my-project\\007'));
         (0, vitest_1.expect)(tab).toEqual({
             id: '2',
             title: '[WorkspaceSync] my-project',
