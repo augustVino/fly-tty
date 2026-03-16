@@ -19,7 +19,7 @@ vi.mock('execa', () => ({
   execa: vi.fn(),
 }))
 
-vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.js', () => ({
+vi.mock('@fly-tty/engine/adapters/terminal/ghostty-applescript.js', () => ({
   activateGhostty: vi.fn().mockResolvedValue(''),
   newWindow: vi.fn().mockResolvedValue(''),
   newTab: vi.fn().mockResolvedValue(''),
@@ -36,8 +36,8 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.js', () =>
 }))
 
 import { execa } from 'execa'
-import { GhosttyAdapter } from '@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js'
-import * as ghosttyScript from '@ide-tui-bridge/engine/adapters/terminal/ghostty-applescript.js'
+import { GhosttyAdapter } from '@fly-tty/engine/adapters/terminal/ghostty-adapter.js'
+import * as ghosttyScript from '@fly-tty/engine/adapters/terminal/ghostty-applescript.js'
 
 const mockExeca = vi.mocked(execa)
 

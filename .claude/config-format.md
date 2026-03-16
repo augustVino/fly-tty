@@ -1,12 +1,12 @@
 # 配置格式
 
-布局配置通过 VS Code/Cursor 的全局设置 `ideTuiBridge.layout` 定义。
+布局配置通过 VS Code/Cursor 的全局设置 `flyTty.layout` 定义。
 
 在 `settings.json` 中配置：
 
 ```json
 {
-  "ideTuiBridge.layout": {
+  "flyTty.layout": {
     "direction": "horizontal",
     "panes": [
       {
@@ -49,7 +49,7 @@
 
 ```json
 {
-  "ideTuiBridge.layout": {
+  "flyTty.layout": {
     "direction": "none",
     "panes": [{
       "id": "dev",
@@ -67,7 +67,7 @@
 
 ```json
 {
-  "ideTuiBridge.layout": {
+  "flyTty.layout": {
     "direction": "vertical",
     "panes": [
       { "id": "left", "commands": ["npm run dev"] },
@@ -81,7 +81,7 @@
 
 ```json
 {
-  "ideTuiBridge.layout": {
+  "flyTty.layout": {
     "direction": "horizontal",
     "panes": [
       { "id": "top", "auto_focus": true, "commands": ["claude"] },

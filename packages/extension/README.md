@@ -1,125 +1,99 @@
-# IDE-TUI Bridge
+# README.md
 
-Eliminate context-switching friction in dual-screen development. One click to launch your terminal with the perfect split layout.
+This file provides guidance to **README.md** (README.ai/code) when working with code in this repository.
 
-![macOS](https://img.shields.io/badge/platform-macOS-blue)
-![Ghostty](https://img.shields.io/badge/terminal-Ghostty-green)
-![VS Code](https://img.shields.io/badge/VS%20Code-1.96+-blue)
+## Fly TTY
 
-## What It Does
+Local workflow automation engine that eliminates context-switching friction in dual-screen development. When triggered from an IDE (Cursor/VS Code), it launches (or activates) the configured terminal emulator, creates/reuses a project tab, builds a multi-pane layout, and injects startup commands into each pane.
 
-When you're working in an IDE with a terminal beside it, you typically:
-1. Open a terminal window
-2. Navigate to the project directory
-3. Split into panes
-4. Run startup commands in each pane
+### Commands
 
-**IDE-TUI Bridge does all of this in one click.**
+```bash
+# Build all workspaces
+npm run build
 
-Click the status bar button or run the **Workspace Sync: Open Project** command, and it:
-- Launches (or activates) Ghostty terminal
-- Creates or reuses a project tab
-- Builds your configured multi-pane layout
-- Injects startup commands into each pane
+# Run all tests (verbose)
+npm run test
 
-## Usage
+# Run tests with coverage
+npm run test:coverage
 
-### Quick Start
+# Typecheck (project references mode)
+npm run typecheck
 
-1. Install the extension
-2. Open a project folder in VS Code / Cursor
-3. Click **`$(terminal) Sync`** in the status bar (bottom-right)
+# Run a single test file
+npx vitest run tests/engine/config.test.ts
 
-### Configuration
+# Watch mode
+npx vitest
 
-Add a `.contextsync.yml` file in your project root:
+# Extension: build/bundle
+cd packages/extension && npm run build
 
-```yaml
-version: "1.0"
-terminal: ghostty
-layout:
-  direction: horizontal
-  panes:
-    - id: pane_top
-      auto_focus: true
-      command: 'git status'
-    - direction: vertical
-      panes:
-        - id: pane_bottom_left
-          command: 'npm run dev'
-        - id: pane_bottom_right
-          command: ''
+# Extension: watch
+cd packages/extension && npm run watch
+
+# Extension: package .vsix
+cd packages/extension && npm run package
 ```
 
-### Extension Settings
+### Architecture
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `ideTuiBridge.ghosttyPath` | `/Applications/Ghostty.app` | Path to Ghostty.app |
-| `ideTuiBridge.layout` | — | Inline layout config (overrides `.contextsync.yml`) |
+#### Monorepo Layout
 
-### Config Priority
+- **`packages/engine`** (`@fly-tty/engine`) — Core library. Validates layout config via Zod schema, orchestrates terminal control. No UI dependency.
+- **`packages/extension`** — VS Code/Cursor extension. Registers the `flyTty.openProject` command, reads layout from VS Code settings, calls into the engine.
+- **`tests/`** — Root-level Vitest test directory. Aliased so tests import `@fly-tty/engine` directly from source.
 
-1. VS Code setting `ideTuiBridge.layout` (highest)
-2. Project `.contextsync.yml`
-3. Default single-pane layout (fallback)
+#### Core Engine Pipeline
 
-## Layout Reference
+`sync-engine.ts` runs the full pipeline: `resolveConfig` → `createAdapter` → `ensureWindow` → `resolveTab` → `buildLayout` → `injectCommands`.
 
-Layouts are defined as a recursive tree of panes and containers:
+Key modules:
+- **`config/`** — Zod schema validates the recursive layout tree. Provides default config for when no layout is configured.
+- **`core/`** — `window-manager` (launch/activate terminal), `tab-manager` (idempotent find-or-create by title prefix), `layout-builder` (DFS traversal of layout tree → ordered split sequence), `command-injector` (sequential execution of commands array with 500ms delay between each).
+- **`adapters/terminal/`** — `TerminalAdapter` interface with `GhosttyAdapter`/`ITerm2Adapter` implementation via AppleScript (`execa`). Factory `createTerminalAdapter(config)` selects by terminal type.
+- **`adapters/ide/`** — `IdeAdapter` interface with `CursorAdapter` for IDE-specific context.
 
-```yaml
-layout:
-  direction: horizontal        # or "vertical"
-  panes:
-    - id: main                 # Leaf pane with a command
-      command: 'npm run dev'
+#### Key Patterns
 
-    - id: git                  # Leaf pane
-      command: 'lazygit'
+- **Adapter pattern** — Terminal and IDE operations behind interfaces for extensibility (Ghostty/iTerm2 today, others later).
+- **Tree-based layouts** — `LayoutNode = PaneLeaf | LayoutContainer` recursive type. `buildSplitSequence` does DFS to produce ordered actions. `collectLeaves` gathers all terminal panes.
+- **Result monad** — `ok<T>()` / `err<E>()` with `isSuccess`/`isFailure` guards. Used by sync engine for error reporting.
+- **Idempotent tab management** — Tabs matched by title `[WorkspaceSync] <dirname>`. Existing tabs are reused (no process destruction).
+- **Sequential command injection** — Each pane supports a `commands` array. Commands execute in order with 500ms delay between each (Ghostty AppleScript cannot detect command completion).
 
-    - direction: vertical      # Nested container
-      panes:
-        - id: tests
-          command: 'npm test'
-        - id: logs
-          command: 'tail -f log/development.log'
+#### Configuration
+
+Layout is configured in VS Code/Cursor global settings (`settings.json`):
+
+```json
+{
+  "flyTty.layout": {
+    "direction": "horizontal",
+    "panes": [
+      { "id": "pane_top", "auto_focus": true, "commands": ["claude"] },
+      {
+        "direction": "vertical",
+        "panes": [
+          { "id": "pane_bottom_left", "commands": ["npm run dev"] },
+          { "id": "pane_bottom_right", "commands": [] }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-### Leaf Pane Properties
+If no layout is configured, a single-pane default is used.
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `id` | string | required | Unique identifier within the layout |
-| `command` | string | `""` | Shell command to execute |
-| `auto_focus` | boolean | `false` | Focus this pane after layout creation |
+#### TypeScript Setup
 
-### Container Properties
+- **Module**: NodeNext (ESM). All internal imports use `.js` extensions.
+- **Target**: ES2022. Node.js >= 20.
+- **Project references**: Root `tsconfig.json` references both packages. `composite: true` for incremental builds.
+- **Tests**: Vitest with `@fly-tty/engine` aliased to `packages/engine/src` for source-level imports.
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `direction` | string | required | `"horizontal"` or `"vertical"` split direction |
-| `panes` | array | required | Child panes or nested containers |
+#### Platform
 
-## Requirements
-
-- **macOS** 12+
-- **Ghostty** terminal v1.3.0+
-- **VS Code** 1.96+ / Cursor
-
-## How It Works
-
-The extension uses AppleScript to automate Ghostty:
-- Tabs are identified by title prefix `[WorkspaceSync] <project-name>`
-- Existing tabs are reused (no process destruction)
-- Layout is built via DFS traversal of the layout tree
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `Workspace Sync: Open Project` | Sync workspace to terminal with configured layout |
-
-## License
-
-[MIT](./LICENSE)
+macOS only. Ghostty terminal v1.3.0+ or iTerm2. AppleScript used for terminal automation.

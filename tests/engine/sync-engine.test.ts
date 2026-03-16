@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { TerminalAdapter, TerminalTab } from '@ide-tui-bridge/engine/types/adapter.js'
+import type { TerminalAdapter, TerminalTab } from '@fly-tty/engine/types/adapter.js'
 
 // ---------------------------------------------------------------------------
 // Create mock adapter that will replace ghosttyAdapter
@@ -40,21 +40,21 @@ const mockAdapter: TerminalAdapter = {
 // Mock external dependencies before importing sync-engine
 // ---------------------------------------------------------------------------
 // Ghostty adapter mock - provide our mock adapter as the singleton
-vi.mock('@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js', () => ({
+vi.mock('@fly-tty/engine/adapters/terminal/ghostty-adapter.js', () => ({
   ghosttyAdapter: null,
 }))
 
 // ---------------------------------------------------------------------------
 // Imports after mocks
 // ---------------------------------------------------------------------------
-import { sync } from '@ide-tui-bridge/engine/core/sync-engine.js'
-import { defaultConfig } from '@ide-tui-bridge/engine/config/defaults.js'
+import { sync } from '@fly-tty/engine/core/sync-engine.js'
+import { defaultConfig } from '@fly-tty/engine/config/defaults.js'
 
 // ---------------------------------------------------------------------------
 // We need to intercept the sync function's internal createTerminalAdapter call.
 // Since ESM imports are hoisted, we need to monkey-patch the imported module.
 // ---------------------------------------------------------------------------
-const ghosttyAdapterModule = await import('@ide-tui-bridge/engine/adapters/terminal/ghostty-adapter.js')
+const ghosttyAdapterModule = await import('@fly-tty/engine/adapters/terminal/ghostty-adapter.js')
 // @ts-expect-error - we're replacing the null with a real mock
 ghosttyAdapterModule.ghosttyAdapter = mockAdapter
 

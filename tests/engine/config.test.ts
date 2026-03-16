@@ -7,9 +7,9 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { ProjectConfigSchema } from '@ide-tui-bridge/engine/config/schema.js'
-import { defaultConfig } from '@ide-tui-bridge/engine/config/defaults.js'
-import type { ProjectConfig } from '@ide-tui-bridge/engine/types/config.js'
+import { ProjectConfigSchema } from '@fly-tty/engine/config/schema.js'
+import { defaultConfig } from '@fly-tty/engine/config/defaults.js'
+import type { ProjectConfig } from '@fly-tty/engine/types/config.js'
 
 // ---------------------------------------------------------------------------
 // Schema validation tests

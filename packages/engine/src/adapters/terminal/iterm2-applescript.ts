@@ -235,7 +235,7 @@ export async function findSessionByProject(
   const trimmed = raw.trim()
   if (!trimmed || !trimmed.includes(':')) {
     console.error(
-      '[ide-tui-bridge] findSessionByProject: no match found.',
+      '[fly-tty] findSessionByProject: no match found.',
       '\n  projectPath:', projectPath,
       '\n  AppleScript returned:', JSON.stringify(trimmed),
     )
@@ -248,7 +248,7 @@ export async function findSessionByProject(
 
   if (Number.isNaN(windowIndex) || Number.isNaN(tabIndex)) {
     console.error(
-      '[ide-tui-bridge] findSessionByProject: unexpected AppleScript output.',
+      '[fly-tty] findSessionByProject: unexpected AppleScript output.',
       '\n  projectPath:', projectPath,
       '\n  AppleScript returned:', JSON.stringify(trimmed),
     )

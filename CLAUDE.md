@@ -1,4 +1,4 @@
-# IDE-TUI Bridge
+# Fly TTY
 
 本地工作流自动化引擎，消除双屏开发的上下文切换摩擦。IDE 触发后自动管理终端窗口、Tab、分屏布局和启动命令。
 
@@ -19,7 +19,7 @@ cd packages/extension && npm run package  # 生成 .vsix
 
 ## 平台
 
-仅支持 macOS。需要 Ghostty 终端 v1.3.0+，通过 AppleScript 自动化。
+仅支持 macOS。需要 Ghostty 终端 v1.3.0+ 或 iTerm2，通过 AppleScript 自动化。
 
 ## TypeScript 配置
 

@@ -11,8 +11,8 @@ import { describe, it, expect } from 'vitest'
 import {
   buildSplitSequence,
   collectLeaves,
-} from '@ide-tui-bridge/engine/core/layout-builder.js'
-import type { LayoutNode } from '@ide-tui-bridge/engine/types/layout.js'
+} from '@fly-tty/engine/core/layout-builder.js'
+import type { LayoutNode } from '@fly-tty/engine/types/layout.js'
 
 // ---------------------------------------------------------------------------
 // buildSplitSequence tests

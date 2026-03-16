@@ -3,9 +3,9 @@
 ## Monorepo 结构
 
 ```
-ide-tui-bridge/
+fly-tty/
 ├── packages/
-│   ├── engine/          # @ide-tui-bridge/engine - 核心库
+│   ├── engine/          # @fly-tty/engine - 核心库
 │   │   └── src/
 │   │       ├── config/      # Schema 校验与默认值
 │   │       ├── core/        # 同步引擎、布局构建、Tab管理
@@ -37,13 +37,13 @@ sync({ projectPath, layout? })
 | `core/layout-builder.ts` | 树形遍历 → 有序分屏动作（`buildSplitSequence`） |
 | `core/tab-manager.ts` | 幂等查找或创建，标题格式 `[WorkspaceSync] <dirname>` |
 | `core/command-injector.ts` | 遍历面板，按顺序执行 `commands` 数组 |
-| `adapters/terminal/` | `TerminalAdapter` 接口 + `GhosttyAdapter`（AppleScript） |
+| `adapters/terminal/` | `TerminalAdapter` 接口 + `GhosttyAdapter`/`ITerm2Adapter`（AppleScript） |
 | `types/layout.ts` | 递归类型 `LayoutNode = PaneLeaf \| LayoutContainer` |
 
 ## 设计模式
 
 ### Adapter 模式
-终端操作封装在 `TerminalAdapter` 接口后。添加新终端（iTerm2/WezTerm）只需实现此接口。
+终端操作封装在 `TerminalAdapter` 接口后。添加新终端只需实现此接口。
 
 ### 树形布局
 - `LayoutContainer`：包含 `direction` 和嵌套的 `panes`

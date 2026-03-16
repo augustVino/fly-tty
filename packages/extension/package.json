@@ -1,13 +1,13 @@
 {
-  "name": "ide-tui-bridge",
+  "name": "fly-tty",
   "version": "0.2.0",
-  "description": "IDE-TUI Bridge Extension for Cursor/VS Code",
-  "displayName": "IDE-TUI Bridge",
+  "description": "Fly TTY Extension for Cursor/VS Code",
+  "displayName": "Fly TTY",
   "publisher": "vino",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/augustVino/ide-tui-bridge"
+    "url": "https://github.com/augustVino/fly-tty"
   },
   "categories": [
     "Other"
@@ -26,14 +26,14 @@
     "vscode": "^1.96.0"
   },
   "activationEvents": [
-    "onCommand:ideTuiBridge.openProject"
+    "onCommand:flyTty.openProject"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "ideTuiBridge.openProject",
-        "title": "Workspace Sync: Open Project",
+        "command": "flyTty.openProject",
+        "title": "Fly TTY: Open Project",
         "icon": {
           "light": "media/icon-light.svg",
           "dark": "media/icon-dark.svg"
@@ -43,16 +43,16 @@
     "menus": {
       "editor/title": [
         {
-          "command": "ideTuiBridge.openProject",
+          "command": "flyTty.openProject",
           "group": "navigation",
           "when": "workspaceFolderCount > 0"
         }
       ]
     },
     "configuration": {
-      "title": "IDE-TUI Bridge",
+      "title": "Fly TTY",
       "properties": {
-        "ideTuiBridge.terminal": {
+        "flyTty.terminal": {
           "type": "string",
           "enum": [
             "ghostty",
@@ -61,12 +61,12 @@
           "default": "ghostty",
           "description": "Terminal application to use for workspace sync"
         },
-        "ideTuiBridge.terminalPath": {
+        "flyTty.terminalPath": {
           "type": "string",
           "default": "",
           "description": "Custom path to the terminal application (e.g. /Applications/Ghostty.app). Leave empty to use the default."
         },
-        "ideTuiBridge.layout": {
+        "flyTty.layout": {
           "type": "object",
           "description": "Terminal layout configuration. Example: { \"direction\": \"vertical\", \"panes\": [{ \"id\": \"left\", \"commands\": [\"vim\"] }, { \"id\": \"right\" }] }"
         }

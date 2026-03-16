@@ -1,7 +1,7 @@
 /**
- * Command Handler for IDE-TUI Bridge Extension
+ * Command Handler for Fly TTY Extension
  *
- * Handles the `ideTuiBridge.openProject` command:
+ * Handles the `flyTty.openProject` command:
  * 1. Validates workspace root
  * 2. Reads extension configuration
  * 3. Calls engine.sync()
@@ -9,10 +9,10 @@
  */
 
 import * as vscode from 'vscode'
-import { sync } from '@ide-tui-bridge/engine'
-import type { SyncOptions, SyncResult, LayoutNode, TerminalType } from '@ide-tui-bridge/engine'
+import { sync } from '@fly-tty/engine'
+import type { SyncOptions, SyncResult, LayoutNode, TerminalType } from '@fly-tty/engine'
 
-const OUTPUT_CHANNEL_NAME = 'IDE-TUI Bridge'
+const OUTPUT_CHANNEL_NAME = 'Fly TTY'
 
 /**
  * Create and return the extension's OutputChannel.
@@ -43,7 +43,7 @@ export function getExtensionConfig(): {
   readonly terminal: TerminalType
   readonly layout?: LayoutNode
 } {
-  const configuration = vscode.workspace.getConfiguration('ideTuiBridge')
+  const configuration = vscode.workspace.getConfiguration('flyTty')
 
   const terminalPath = configuration.get<string>('terminalPath', '')
   const terminal = configuration.get<TerminalType>('terminal', 'ghostty')
@@ -78,7 +78,7 @@ function showOutput(outputChannel: vscode.OutputChannel, content: string): void 
 }
 
 /**
- * Handle the `ideTuiBridge.openProject` command.
+ * Handle the `flyTty.openProject` command.
  *
  * Orchestrates the full flow: validate workspace, read config, sync, display result.
  */
@@ -90,7 +90,7 @@ export async function handleOpenProject(
   const projectPath = getWorkspaceRootPath()
   if (!projectPath) {
     vscode.window.showErrorMessage(
-      'IDE-TUI Bridge: No workspace folder is open. Please open a project folder first.',
+      'Fly TTY: No workspace folder is open. Please open a project folder first.',
     )
     return
   }
@@ -113,21 +113,21 @@ export async function handleOpenProject(
       const summary = formatSyncResult(result.value)
       showOutput(outputChannel, summary)
       vscode.window.showInformationMessage(
-        `IDE-TUI Bridge: Workspace sync completed successfully.`,
+        `Fly TTY: Workspace sync completed successfully.`,
       )
     } else {
       const errorMessage =
         result.error instanceof Error ? result.error.message : String(result.error)
       showOutput(outputChannel, `Sync error: ${errorMessage}`)
       vscode.window.showErrorMessage(
-        `IDE-TUI Bridge: ${errorMessage}`,
+        `Fly TTY: ${errorMessage}`,
       )
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     showOutput(outputChannel, `Sync failed: ${message}`)
     vscode.window.showErrorMessage(
-      `IDE-TUI Bridge: Workspace sync failed — ${message}`,
+      `Fly TTY: Workspace sync failed — ${message}`,
     )
   }
 }

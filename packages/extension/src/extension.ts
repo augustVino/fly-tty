@@ -1,7 +1,7 @@
 /**
- * IDE-TUI Bridge VS Code / Cursor Extension
+ * Fly TTY VS Code / Cursor Extension
  *
- * Entry point for the extension. Registers the `ideTuiBridge.openProject` command,
+ * Entry point for the extension. Registers the `flyTty.openProject` command,
  * creates a status bar button and OutputChannel, and manages lifecycle resources.
  */
 
@@ -11,7 +11,7 @@ import {
   handleOpenProject,
 } from './command-handler.js'
 
-const COMMAND_ID = 'ideTuiBridge.openProject'
+const COMMAND_ID = 'flyTty.openProject'
 
 /**
  * Extension activation lifecycle.
@@ -39,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
   )
   statusBarItem.command = COMMAND_ID
   statusBarItem.text = '$(terminal) Sync'
-  statusBarItem.tooltip = 'IDE-TUI Bridge: Open project in terminal'
+  statusBarItem.tooltip = 'Fly TTY: Open project in terminal'
   statusBarItem.show()
 
   context.subscriptions.push(commandDisposable, statusBarItem)

@@ -1,7 +1,7 @@
 {
-  "name": "ide-tui-bridge",
+  "name": "fly-tty",
   "version": "0.0.1",
-  "description": "IDE-TUI Bridge: Sync workspace layout between IDE and terminal",
+  "description": "Fly TTY: Instant workspace sync between IDE and terminal",
   "private": true,
   "workspaces": [
     "packages/*"

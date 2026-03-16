@@ -1,5 +1,5 @@
 /**
- * esbuild configuration for IDE-TUI Bridge extension
+ * esbuild configuration for Fly TTY extension
  *
  * Bundles src/extension.ts into dist/extension.js (CommonJS).
  * The engine package is bundled inline (not external) so the
@@ -23,7 +23,7 @@ const context = {
   sourcemap: true,
   loader: { '.ts': 'ts' },
   alias: {
-    '@ide-tui-bridge/engine': path.join(enginePath, 'src/index.ts'),
+    '@fly-tty/engine': path.join(enginePath, 'src/index.ts'),
   },
   minify: false,
   logLevel: 'info',

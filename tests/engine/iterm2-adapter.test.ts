@@ -20,7 +20,7 @@ vi.mock('execa', () => ({
   execa: vi.fn(),
 }))
 
-vi.mock('@ide-tui-bridge/engine/adapters/terminal/iterm2-applescript.js', () => ({
+vi.mock('@fly-tty/engine/adapters/terminal/iterm2-applescript.js', () => ({
   activateIterm2: vi.fn().mockResolvedValue(''),
   createWindow: vi.fn().mockResolvedValue(''),
   createTab: vi.fn().mockResolvedValue(''),
@@ -42,8 +42,8 @@ vi.mock('@ide-tui-bridge/engine/adapters/terminal/iterm2-applescript.js', () => 
 }))
 
 import { execa } from 'execa'
-import { ITerm2Adapter } from '@ide-tui-bridge/engine/adapters/terminal/iterm2-adapter.js'
-import * as iterm2Script from '@ide-tui-bridge/engine/adapters/terminal/iterm2-applescript.js'
+import { ITerm2Adapter } from '@fly-tty/engine/adapters/terminal/iterm2-adapter.js'
+import * as iterm2Script from '@fly-tty/engine/adapters/terminal/iterm2-applescript.js'
 
 const mockExeca = vi.mocked(execa)
 

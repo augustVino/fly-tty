@@ -1,5 +1,5 @@
 /**
- * Vitest configuration for IDE-TUI Bridge
+ * Vitest configuration for Fly TTY
  */
 
 import { defineConfig } from 'vitest/config'
@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 export default defineConfig({
   resolve: {
     alias: {
-      '@ide-tui-bridge/engine': resolve(__dirname, 'packages/engine/src'),
+      '@fly-tty/engine': resolve(__dirname, 'packages/engine/src'),
     },
   },
   test: {

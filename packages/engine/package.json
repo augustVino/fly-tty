@@ -1,7 +1,7 @@
 {
-  "name": "@ide-tui-bridge/engine",
+  "name": "@fly-tty/engine",
   "version": "0.1.0",
-  "description": "Core engine for IDE-TUI Bridge",
+  "description": "Core engine for Fly TTY",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
