@@ -1,6 +1,6 @@
 {
   "name": "ide-tui-bridge",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "IDE-TUI Bridge Extension for Cursor/VS Code",
   "displayName": "IDE-TUI Bridge",
   "publisher": "vino",
