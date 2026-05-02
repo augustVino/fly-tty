@@ -394,7 +394,7 @@ describe('GhosttyAdapter: createTab', () => {
     expect(ghosttyScript.getTerminalIds).toHaveBeenCalledOnce()
   })
 
-  it('should create tab with custom title using OSC 0 escape sequence', async () => {
+  it('should create tab with custom title using initial input', async () => {
     vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
     vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
     vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
@@ -407,10 +407,13 @@ describe('GhosttyAdapter: createTab', () => {
       title: '[WorkspaceSync] my-project',
     })
 
-    // Verify OSC 0 (not OSC 1) is used for title setting
-    expect(ghosttyScript.inputText).toHaveBeenCalledWith(
+    // Verify title is passed as initial input to newTab (not via sendCommand)
+    expect(ghosttyScript.newTab).toHaveBeenCalledWith(
+      undefined,
       expect.stringContaining('\\033]0;[WorkspaceSync] my-project\\007'),
     )
+    // No sendCommand/inputText should be called for title setting
+    expect(ghosttyScript.inputText).not.toHaveBeenCalled()
     expect(tab).toEqual({
       id: '2',
       title: '[WorkspaceSync] my-project',
@@ -418,7 +421,7 @@ describe('GhosttyAdapter: createTab', () => {
     })
   })
 
-  it('should create tab with working directory', async () => {
+  it('should create tab with working directory and initial input title', async () => {
     vi.mocked(ghosttyScript.newTab).mockResolvedValueOnce('')
     vi.mocked(ghosttyScript.getTerminalIds).mockResolvedValueOnce(['uuid-1'])
     vi.mocked(ghosttyScript.getTabTitles).mockResolvedValueOnce([
@@ -432,7 +435,10 @@ describe('GhosttyAdapter: createTab', () => {
       workingDirectory: '/Users/dev/test-project',
     })
 
-    expect(ghosttyScript.newTab).toHaveBeenCalledWith('/Users/dev/test-project')
+    expect(ghosttyScript.newTab).toHaveBeenCalledWith(
+      '/Users/dev/test-project',
+      expect.stringContaining('\\033]0;[WorkspaceSync] test-project\\007'),
+    )
   })
 
   it('should throw error when no tabs after creation', async () => {

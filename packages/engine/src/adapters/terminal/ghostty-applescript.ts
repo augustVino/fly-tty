@@ -24,6 +24,14 @@ export interface AppleScriptResult {
 }
 
 /**
+ * Escape a string for safe use in an AppleScript string literal.
+ * Backslashes and double quotes must be escaped.
+ */
+function escapeAppleScript(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
  * Execute an AppleScript string via osascript.
  * Returns the raw stdout string on success, throws on failure.
  */
@@ -59,16 +67,32 @@ export async function newWindow(workingDirectory?: string): Promise<string> {
  * When `workingDirectory` is provided, the new tab's terminal opens directly
  * in that directory — no `cd` command needed afterward.
  *
+ * When `initialInput` is provided, it is sent to the terminal after launch
+ * via Ghostty's `initial input` surface configuration property. This allows
+ * setting the tab title (via OSC escape sequence) before the shell prompt
+ * appears, avoiding visible command text in the terminal output.
+ *
  * Ghostty's sdef defines `surface configuration` as a record-type (not a class),
  * so `with properties` is not valid. Must create it with `new surface configuration`
  * then set properties individually.
  */
-export async function newTab(workingDirectory?: string): Promise<string> {
-  if (workingDirectory) {
-    const escaped = workingDirectory.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    return runAppleScript(
-      `tell application "Ghostty"\n  set cfg to new surface configuration\n  set initial working directory of cfg to "${escaped}"\n  new tab in front window with configuration cfg\nend tell`
-    )
+export async function newTab(
+  workingDirectory?: string,
+  initialInput?: string,
+): Promise<string> {
+  if (workingDirectory || initialInput) {
+    const escapedWd = workingDirectory ? escapeAppleScript(workingDirectory) : ''
+    const escapedInput = initialInput ? escapeAppleScript(initialInput) : ''
+
+    let script = 'tell application "Ghostty"\n  set cfg to new surface configuration\n'
+    if (escapedWd) {
+      script += `  set initial working directory of cfg to "${escapedWd}"\n`
+    }
+    if (escapedInput) {
+      script += `  set initial input of cfg to "${escapedInput}"\n`
+    }
+    script += '  new tab in front window with configuration cfg\nend tell'
+    return runAppleScript(script)
   }
   return runAppleScript('tell application "Ghostty" to make new tab in front window')
 }
@@ -87,7 +111,7 @@ export async function splitPane(
   workingDirectory?: string,
 ): Promise<string> {
   if (workingDirectory) {
-    const escaped = workingDirectory.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const escaped = escapeAppleScript(workingDirectory)
     return runAppleScript(
       `tell application "Ghostty"\n  set cfg to new surface configuration\n  set initial working directory of cfg to "${escaped}"\n  split (focused terminal of selected tab of front window) direction ${direction} with configuration cfg\nend tell`
     )
@@ -107,8 +131,7 @@ export async function splitPane(
  * a carriage return (`\r`) to the shell. Use `sendKey("enter")` to execute.
  */
 export async function inputText(text: string): Promise<string> {
-  // Escape double quotes and backslashes for AppleScript string literal
-  const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const escaped = escapeAppleScript(text)
   return runAppleScript(`tell application "Ghostty" to input text "${escaped}" to focused terminal of selected tab of front window`)
 }
 

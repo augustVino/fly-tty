@@ -156,7 +156,12 @@ export class GhosttyAdapter implements TerminalAdapter {
 
   async createTab(options?: CreateTabOptions): Promise<TerminalTab> {
     const { title, workingDirectory } = options ?? {}
-    await ghosttyScript.newTab(workingDirectory)
+    // Set tab title via OSC 0 as initial input — this executes before the
+    // shell prompt appears, avoiding visible command text in terminal output.
+    const oscTitle = title
+      ? `printf '\\033]0;${title}\\007'`
+      : undefined
+    await ghosttyScript.newTab(workingDirectory, oscTitle)
 
     // Wait for the new tab to register and stabilize
     await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
@@ -169,13 +174,6 @@ export class GhosttyAdapter implements TerminalAdapter {
 
     if (!lastTab) {
       throw new Error('Failed to create tab: no tabs found after creation')
-    }
-
-    // Set the tab name via OSC 0 (window + icon title).
-    // OSC 1 only sets the icon name, which `name of tab` does not return.
-    // OSC 0 ensures the title is visible to `getTabTitles` for reuse.
-    if (title) {
-      await this.sendCommand(`printf '\\033]0;${title}\\007'`)
     }
 
     return { ...lastTab, title: title ?? lastTab.title }

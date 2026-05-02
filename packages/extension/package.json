@@ -1,6 +1,6 @@
 {
   "name": "fly-tty",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fly TTY Extension for Cursor/VS Code",
   "displayName": "Fly TTY",
   "publisher": "vino",
@@ -25,9 +25,6 @@
   "engines": {
     "vscode": "^1.96.0"
   },
-  "activationEvents": [
-    "onCommand:flyTty.openProject"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [

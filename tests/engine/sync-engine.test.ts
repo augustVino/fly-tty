@@ -142,12 +142,8 @@ describe('core/sync-engine: sync (new tab flow)', () => {
     expect(mockAdapterMethods.splitPane).toHaveBeenCalledWith('right', {
       workingDirectory: '/tmp/test-project',
     })
-    // After splits: re-set title on first pane
-    expect(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1)
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(
-      expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"),
-    )
-    // sendCommand also called for panes with non-empty commands
+    // Title is set via initial input in createTab, no sendCommand needed here
+    // sendCommand only called for panes with non-empty commands
     expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith('vim')
   })
 })
@@ -199,11 +195,9 @@ describe('core/sync-engine: sync (default config)', () => {
 
     expect(mockAdapterMethods.ensureRunning).toHaveBeenCalled()
     expect(mockAdapterMethods.activateWindow).toHaveBeenCalled()
-    // Title is re-set after splits (even with 0 splits, the new tab path triggers it)
-    expect(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1)
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(
-      expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"),
-    )
+    // Title is set via initial input in createTab, no sendCommand/navigateToPane needed
+    expect(mockAdapterMethods.navigateToPane).not.toHaveBeenCalled()
+    expect(mockAdapterMethods.sendCommand).not.toHaveBeenCalled()
   })
 })
 
@@ -265,11 +259,9 @@ describe('core/sync-engine: sync (three-pane layout)', () => {
     expect(mockAdapterMethods.splitPane).toHaveBeenNthCalledWith(2, 'right', {
       workingDirectory: '/tmp/test-project',
     })
-    // Title re-set after splits
-    expect(mockAdapterMethods.navigateToPane).toHaveBeenCalledWith(1)
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledWith(
-      expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"),
-    )
+    // Title is set via initial input in createTab, no sendCommand needed
+    expect(mockAdapterMethods.navigateToPane).not.toHaveBeenCalled()
+    expect(mockAdapterMethods.sendCommand).not.toHaveBeenCalled()
   })
 })
 
@@ -293,13 +285,11 @@ describe('core/sync-engine: sync (multiple commands per pane)', () => {
 
     expect(result.ok).toBe(true)
 
-    // First sendCommand is the OSC 0 title re-set
-    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledTimes(4)
-    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(1,
-      expect.stringContaining("\\033]0;[WorkspaceSync] test-project\\007"),
-    )
-    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(2, 'cd /some/path')
-    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(3, 'npm install')
-    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(4, 'npm run dev')
+    // Title is set via initial input in createTab, not via sendCommand
+    // Only the 3 user commands are sent via sendCommand
+    expect(mockAdapterMethods.sendCommand).toHaveBeenCalledTimes(3)
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(1, 'cd /some/path')
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(2, 'npm install')
+    expect(mockAdapterMethods.sendCommand).toHaveBeenNthCalledWith(3, 'npm run dev')
   })
 })

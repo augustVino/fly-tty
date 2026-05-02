@@ -99,15 +99,8 @@ export async function sync(options: SyncOptions): Promise<Result<SyncResult>> {
         })
       }
 
-      // Step 4b: Re-set the OSC 0 title on the first pane.
-      // After splits the focused pane may have changed; navigating to pane 1
-      // and re-sending the title improves the hit rate for tab reuse.
-      const dirName = options.projectPath.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
-      const oscTitle = `[WorkspaceSync] ${dirName}`
-      await adapter.navigateToPane(1)
-      await adapter.sendCommand(`printf '\\033]0;${oscTitle}\\007'`)
-
-      // Step 4c: Inject commands into all panes (only for new tabs)
+      // Step 4b: Inject commands into all panes (only for new tabs)
+      // Tab title was already set via initial input in createTab().
       await injectCommands({
         adapter,
         layout: config.layout,
